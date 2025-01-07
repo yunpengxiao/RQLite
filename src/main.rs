@@ -1,12 +1,23 @@
 use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::prelude::*;
-use std::os::unix::fs::FileExt;
 
-fn get_page_header(file: &mut File) -> u16 {
-    let mut buffer = vec![0u8; 2];
-    let _bytes_read = file.read_at(&mut buffer, 103).unwrap();
-    u16::from_be_bytes([buffer[0], buffer[1]])
+const FILE_HEADER_SIZE: usize = 100;
+
+struct FileHeader {
+    raw: Vec<u8>,
+    cell_count: u16,
+}
+
+impl FileHeader {
+    fn from(file: &mut File) -> Self {
+        let mut header = [0; FILE_HEADER_SIZE];
+        let _ = file.read_exact(&mut header);
+        Self {
+            raw: header.to_vec(),
+            cell_count: u16::from_be_bytes([header[3], header[4]]),
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -37,13 +48,13 @@ fn main() -> Result<()> {
             // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
             #[allow(unused_variables)]
             let page_size = u16::from_be_bytes([header[16], header[17]]);
-            let cell_count = get_page_header(&mut file);
+            let file_header = FileHeader::from(&mut file);
             // You can use print statements as follows for debugging, they'll be visible when running tests.
             eprintln!("Logs from your program will appear here!");
 
             // Uncomment this block to pass the first stage
             println!("database page size: {}", page_size);
-            println!("number of tables: {}", cell_count);
+            println!("number of tables: {}", file_header.cell_count);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
