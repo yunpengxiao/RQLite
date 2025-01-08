@@ -62,4 +62,34 @@ impl CellPointer {
             pointers: cell_pointers,
         })
     }
+
+    pub fn read_cells(&self, file: &mut File) -> Vec<Cell> {
+        let first_cell_location = self.pointers[0];
+        let mut buffer = [0; 100];
+        Vec::new()
+    }
+}
+
+pub struct Cell {
+    pub size: usize,
+    pub rowid: u64,
+    pub record: Record,
+}
+
+impl Cell {
+    pub fn from(data: &[u8]) -> Self {
+        use crate::utils::read_variant;
+        let (size, bytes_read) = read_variant(data);
+    }
+}
+
+pub struct Record {
+    pub header_size: usize,
+    pub types: Vec<u32>,
+    pub rows: Vec<String>,
+}
+
+impl Record {
+    pub fn from(data: &[u8]) -> Self {
+    }
 }

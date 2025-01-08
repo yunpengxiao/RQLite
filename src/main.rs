@@ -1,4 +1,5 @@
 mod page;
+mod utils;
 
 use anyhow::{bail, Result};
 use page::{CellPointer, FileHeader, PageHeader};
@@ -29,9 +30,8 @@ fn main() -> Result<()> {
             let mut file = File::open(&args[1])?;
             let file_header = FileHeader::from(&mut file);
             let page_header = PageHeader::from(&mut file);
-            let cell_pointers =
-                CellPointer::from(&mut file, usize::try_from(page_header.cell_count).unwrap())
-                    .unwrap();
+            let cell_count = usize::try_from(page_header.cell_count).unwrap();
+            let cell_pointers = CellPointer::from(&mut file, cell_count).unwrap();
 
             println!("database page size: {}", file_header.page_size);
             println!("number of tables: {}", page_header.cell_count);
