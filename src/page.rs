@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io;
 use std::io::prelude::*;
 use std::os::unix::prelude::FileExt;
 
@@ -28,11 +29,37 @@ pub struct PageHeader {
 }
 
 impl PageHeader {
+    const PAGE_HEADER_SIZE: usize = 12;
+
     pub fn from(file: &mut File) -> Self {
         let mut buffer = [0; 2];
-        let _bytes_read = file.read_at(&mut buffer, 103);
+        let _bytes_read = file.read_at(
+            &mut buffer,
+            u64::try_from(FileHeader::FILE_HEADER_SIZE + 3).unwrap(),
+        );
         Self {
             cell_count: u16::from_be_bytes([buffer[0], buffer[1]]),
         }
+    }
+}
+
+pub struct CellPointer {
+    pub pointers: Vec<u16>,
+}
+
+impl CellPointer {
+    pub fn from(file: &mut File, cell_count: usize) -> io::Result<Self> {
+        let mut buffer = vec![0; cell_count * 2];
+        let mut cell_pointers = Vec::new();
+        file.read_exact_at(
+            &mut buffer[..],
+            u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::PAGE_HEADER_SIZE).unwrap(),
+        )?;
+        for slice in buffer.as_slice().chunks(2) {
+            cell_pointers.push(u16::from_be_bytes(slice.try_into().unwrap()));
+        }
+        Ok(Self {
+            pointers: cell_pointers,
+        })
     }
 }

@@ -1,8 +1,8 @@
 mod page;
 
 use anyhow::{bail, Result};
+use page::{CellPointer, FileHeader, PageHeader};
 use std::fs::File;
-use page::{PageHeader, FileHeader};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -29,9 +29,13 @@ fn main() -> Result<()> {
             let mut file = File::open(&args[1])?;
             let file_header = FileHeader::from(&mut file);
             let page_header = PageHeader::from(&mut file);
+            let cell_pointers =
+                CellPointer::from(&mut file, usize::try_from(page_header.cell_count).unwrap())
+                    .unwrap();
 
             println!("database page size: {}", file_header.page_size);
             println!("number of tables: {}", page_header.cell_count);
+            println!("number of cells pointer: {}", cell_pointers.pointers.len());
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
