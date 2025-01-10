@@ -32,6 +32,7 @@ fn main() -> Result<()> {
             let page_header = PageHeader::from(&mut file);
             let cell_count = usize::try_from(page_header.cell_count).unwrap();
             let cell_pointers = CellPointer::from(&mut file, cell_count).unwrap();
+            cell_pointers.read_cells(&mut file);
 
             println!("database page size: {}", file_header.page_size);
             println!("number of tables: {}", page_header.cell_count);
