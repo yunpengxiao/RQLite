@@ -65,20 +65,18 @@ impl RowReader {
     pub fn from(file: &mut File, cell_count: usize) -> io::Result<Self> {
         let mut buffer = vec![0; cell_count * 2];
         let mut cell_pointers = Vec::new();
-        // Page header size can be 8 bytes too, just use 12 here for simplibility
+        // Page header size can be 12 bytes too, just use 8 here for simplicity
         file.read_exact_at(
             &mut buffer[..],
             u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::MAX_PAGE_HEADER_SIZE).unwrap(),
         )?;
         for slice in buffer.as_slice().chunks(2) {
             let offset = u16::from_be_bytes(slice.try_into().unwrap());
-            println!("Found location {offset}");
             cell_pointers.push(offset);
         }
 
         let mut cells: Vec<Cell> = Vec::new();
         for cell_location in &cell_pointers {
-            println!("the cell location is {cell_location}");
             let mut buffer = [0; Self::BUFFER_SIZE];
             let _ = file.read_exact_at(&mut buffer, (*cell_location) as u64);
             cells.push(Cell::from(&buffer));
@@ -88,6 +86,14 @@ impl RowReader {
             pointers: cell_pointers,
             cells,
         })
+    }
+
+    pub fn read(&self, row_num: u32) -> (String, String, String) {
+        (
+            self.cells[row_num as usize].record.get_column(0),
+            self.cells[row_num as usize].record.get_column(1),
+            self.cells[row_num as usize].record.get_column(2)
+        )
     }
 }
 
@@ -104,9 +110,6 @@ impl Cell {
         let (size_of_record, bytes_read1) = read_variant(data);
         let (rowid, bytes_read2) = read_variant(&data[bytes_read1..]);
         let record = Record::from(&data[bytes_read1 + bytes_read2..]);
-        //let (record_header_size, bytes_read3) = read_variant(&data[bytes_read1 + bytes_read2..]);
-        //let (type1, bytes_read4) = read_variant(&data[bytes_read1 + bytes_read2 + bytes_read3..]);
-        println!("size is {size_of_record}, rowid is {rowid}, record is {}", record.get_column(1));
         Self {
             size_of_record: size_of_record.try_into().unwrap(),
             rowid,
@@ -130,6 +133,7 @@ pub struct Record {
 impl Record {
     pub fn from(data: &[u8]) -> Self {
         let (record_head_size, first_type_offset) = read_variant(&data[..]);
+        //println!("record head size is {record_head_size}");
         let mut column_pointer = record_head_size;
         let mut serial_type_pointer: usize = first_type_offset;
         let mut columns: Vec<(SerialType, Vec<u8>)> = Vec::new();

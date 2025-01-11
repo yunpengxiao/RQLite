@@ -18,16 +18,20 @@ fn main() -> Result<()> {
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
-
             let mut file = File::open(&args[1])?;
             let file_header = FileHeader::from(&mut file);
             let page_header = PageHeader::from(&mut file);
-            let cell_count = usize::try_from(page_header.cell_count).unwrap();
-            let row_reader = RowReader::from(&mut file, cell_count).unwrap();
 
             println!("database page size: {}", file_header.page_size);
             println!("number of tables: {}", page_header.cell_count);
-            println!("number of cells pointer: {}", row_reader.pointers.len());
+        }
+        ".tables" => {
+            let mut file = File::open(&args[1])?;
+            let num_of_cell = PageHeader::from(&mut file).cell_count;
+            let row_reader = RowReader::from(&mut file, num_of_cell as usize).unwrap();
+            for n in 0..num_of_cell {
+                println!("table{n}'s name is {}", row_reader.read(n.into()).2);
+            }
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
