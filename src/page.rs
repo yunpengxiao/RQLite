@@ -4,6 +4,7 @@ use std::io::prelude::*;
 use std::os::unix::prelude::FileExt;
 
 use crate::utils::read_variant;
+use crate::utils::MyCoolArrayStuff;
 
 /*
     A b-tree page is divided into regions in the following order:
@@ -70,8 +71,8 @@ impl RowReader {
             &mut buffer[..],
             u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::MAX_PAGE_HEADER_SIZE).unwrap(),
         )?;
-        for slice in buffer.as_slice().chunks(2) {
-            let offset = u16::from_be_bytes(slice.try_into().unwrap());
+        for slice in buffer.as_slice().as_array_iter() {
+            let offset = u16::from_be_bytes(*slice);
             cell_pointers.push(offset);
         }
 

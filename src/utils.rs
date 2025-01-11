@@ -1,4 +1,4 @@
-struct ArrayIter<'a, T, const N: usize> {
+pub struct ArrayIter<'a, T, const N: usize> {
     iter: std::slice::ChunksExact<'a, T>,
 }
 
@@ -10,7 +10,7 @@ impl<'a, const N: usize, T> Iterator for ArrayIter<'a, T, N> {
     }
 }
 
-trait MyCoolArrayStuff<T> {
+pub trait MyCoolArrayStuff<T> {
     fn as_array_iter<'a, const N: usize>(&'a self) -> ArrayIter<'a, T, N>;
 }
 
