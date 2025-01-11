@@ -5,6 +5,15 @@ use std::os::unix::prelude::FileExt;
 
 use crate::utils::read_variant;
 
+/*
+    A b-tree page is divided into regions in the following order:
+        * The 100-byte database file header (found on page 1 only)
+        * The 8 or 12 byte b-tree page header
+        * The cell pointer array
+        * Unallocated space
+        * The cell content area
+        * The reserved region
+*/
 pub struct FileHeader {
     pub page_size: u16,
 }
@@ -31,7 +40,7 @@ pub struct PageHeader {
 }
 
 impl PageHeader {
-    const PAGE_HEADER_SIZE: usize = 12;
+    const MAX_PAGE_HEADER_SIZE: usize = 8;
 
     pub fn from(file: &mut File) -> Self {
         let mut buffer = [0; 2];
@@ -45,26 +54,32 @@ impl PageHeader {
     }
 }
 
-pub struct CellPointer {
+pub struct RowReader {
     pub pointers: Vec<u16>,
     pub cells: Vec<Cell>,
 }
 
-impl CellPointer {
+impl RowReader {
+    const BUFFER_SIZE: usize = 1000;
+
     pub fn from(file: &mut File, cell_count: usize) -> io::Result<Self> {
         let mut buffer = vec![0; cell_count * 2];
         let mut cell_pointers = Vec::new();
+        // Page header size can be 8 bytes too, just use 12 here for simplibility
         file.read_exact_at(
             &mut buffer[..],
-            u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::PAGE_HEADER_SIZE).unwrap(),
+            u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::MAX_PAGE_HEADER_SIZE).unwrap(),
         )?;
         for slice in buffer.as_slice().chunks(2) {
-            cell_pointers.push(u16::from_be_bytes(slice.try_into().unwrap()));
+            let offset = u16::from_be_bytes(slice.try_into().unwrap());
+            println!("Found location {offset}");
+            cell_pointers.push(offset);
         }
 
         let mut cells: Vec<Cell> = Vec::new();
         for cell_location in &cell_pointers {
-            let mut buffer = [0; 1500];
+            println!("the cell location is {cell_location}");
+            let mut buffer = [0; Self::BUFFER_SIZE];
             let _ = file.read_exact_at(&mut buffer, (*cell_location) as u64);
             cells.push(Cell::from(&buffer));
         }
@@ -91,7 +106,7 @@ impl Cell {
         let record = Record::from(&data[bytes_read1 + bytes_read2..]);
         //let (record_header_size, bytes_read3) = read_variant(&data[bytes_read1 + bytes_read2..]);
         //let (type1, bytes_read4) = read_variant(&data[bytes_read1 + bytes_read2 + bytes_read3..]);
-        println!("size is {size_of_record}, rowid is {rowid}");
+        println!("size is {size_of_record}, rowid is {rowid}, record is {}", record.get_column(1));
         Self {
             size_of_record: size_of_record.try_into().unwrap(),
             rowid,
@@ -120,8 +135,8 @@ impl Record {
         let mut columns: Vec<(SerialType, Vec<u8>)> = Vec::new();
         while serial_type_pointer != record_head_size as usize {
             let (serial_type, bytes_read) = read_variant(&data[serial_type_pointer..]);
-            let mut size_of_column = 0;
-            let mut st = SerialType::NULL;
+            let size_of_column: i64;
+            let st: SerialType;
             if serial_type >= 12 && serial_type % 2 == 0 {
                 size_of_column = (serial_type - 12) / 2;
                 st = SerialType::Blob;
