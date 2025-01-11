@@ -2,7 +2,7 @@ mod page;
 mod utils;
 
 use anyhow::{bail, Result};
-use page::{CellPointer, FileHeader, PageHeader};
+use page::{Cell, CellPointer, FileHeader, PageHeader};
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -32,8 +32,8 @@ fn main() -> Result<()> {
             let page_header = PageHeader::from(&mut file);
             let cell_count = usize::try_from(page_header.cell_count).unwrap();
             let cell_pointers = CellPointer::from(&mut file, cell_count).unwrap();
-            cell_pointers.read_cells(&mut file);
-
+            //cell_pointers.read_cells(&mut file);
+            //let cell1 = Cell::from(data);
             println!("database page size: {}", file_header.page_size);
             println!("number of tables: {}", page_header.cell_count);
             println!("number of cells pointer: {}", cell_pointers.pointers.len());

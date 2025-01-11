@@ -47,6 +47,7 @@ impl PageHeader {
 
 pub struct CellPointer {
     pub pointers: Vec<u16>,
+    pub cells: Vec<Cell>,
 }
 
 impl CellPointer {
@@ -60,16 +61,18 @@ impl CellPointer {
         for slice in buffer.as_slice().chunks(2) {
             cell_pointers.push(u16::from_be_bytes(slice.try_into().unwrap()));
         }
+
+        let mut cells: Vec<Cell> = Vec::new();
+        for cell_location in &cell_pointers {
+            let mut buffer = [0; 1500];
+            let _ = file.read_exact_at(&mut buffer, (*cell_location) as u64);
+            cells.push(Cell::from(&buffer));
+        }
+
         Ok(Self {
             pointers: cell_pointers,
+            cells,
         })
-    }
-
-    pub fn read_cells(&self, file: &mut File) -> Cell {
-        let first_cell_location = self.pointers[0];
-        let mut buffer = [0; 150];
-        let _ = file.read_exact_at(&mut buffer, first_cell_location.into());
-        Cell::from(&buffer)
     }
 }
 
@@ -113,7 +116,7 @@ impl Record {
     pub fn from(data: &[u8]) -> Self {
         let (record_head_size, first_type_offset) = read_variant(&data[..]);
         let mut column_pointer = record_head_size;
-        let mut serial_type_pointer = first_type_offset;
+        let mut serial_type_pointer: usize = first_type_offset;
         let mut columns: Vec<(SerialType, Vec<u8>)> = Vec::new();
         while serial_type_pointer != record_head_size as usize {
             let (serial_type, bytes_read) = read_variant(&data[serial_type_pointer..]);
@@ -133,13 +136,21 @@ impl Record {
                 st = SerialType::NULL;
             }
 
-            let value: Vec<u8> = data[(column_pointer as usize)..(column_pointer as usize) + (size_of_column as usize)].to_vec();
+            let value: Vec<u8> = data
+                [(column_pointer as usize)..(column_pointer as usize) + (size_of_column as usize)]
+                .to_vec();
             columns.push((st, value));
             serial_type_pointer += bytes_read;
             column_pointer += size_of_column;
         }
-        Self {
-            columns,
+        Self { columns }
+    }
+
+    pub fn get_column(&self, index: usize) -> String {
+        let (stype, data) = &self.columns[index];
+        match stype {
+            SerialType::String => String::from_utf8(data.clone()).unwrap(),
+            _ => String::from(" "),
         }
     }
 }
