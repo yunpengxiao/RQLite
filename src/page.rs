@@ -35,8 +35,54 @@ type Result<T> = core::result::Result<T, MyError>;
         * The cell content area
         * The reserved region
 */
+
 #[derive(Debug)]
-pub struct FileHeader {
+pub struct PageReader {
+    pub file_header: Option<FileHeader>,
+    pub page_header: PageHeader,
+    pub row_reader: RowReader,
+    pub page_num: usize,
+}
+
+impl PageReader {
+    pub fn from (file: &mut File, page_num: usize) -> Self {
+        if page_num == 1 {
+            Self {
+                file_header: Some(FileHeader::from(file).unwrap()),
+                page_header: PageHeader::from(file).unwrap(),
+                row_reader: RowReader::from(file).unwrap(),
+                page_num,
+            }
+        } else {
+            Self {
+                file_header: None,
+                page_header: PageHeader::from(file).unwrap(),
+                row_reader: RowReader::from(file).unwrap(),
+                page_num,
+            }
+        }   
+    }
+
+    pub fn get_page_size(&self) -> u16 {
+        self.file_header.as_ref().unwrap().page_size
+    }
+
+    pub fn table_count(&self) -> u16 {
+        self.page_header.cell_count
+    }
+
+    pub fn get_table_names(&self) -> Vec<String> {
+        let mut result: Vec<String> = Vec::new();
+        let num_of_cell = self.row_reader.pointers.len();
+        for n in 0..num_of_cell {
+            result.push(self.row_reader.read(n as u32)[1].to_string());
+        }
+        result
+    }
+}
+
+#[derive(Debug)]
+struct FileHeader {
     pub page_size: u16,
 }
 
@@ -78,7 +124,7 @@ impl PageHeader {
 }
 
 #[derive(Debug)]
-pub struct RowReader {
+struct RowReader {
     pub pointers: Vec<u16>,
     pub cells: Vec<Cell>,
 }
@@ -126,7 +172,7 @@ impl RowReader {
 }
 
 #[derive(Debug)]
-pub struct Cell {
+struct Cell {
     pub size_of_record: usize,
     pub rowid: i64,
     pub record: Record,
@@ -149,7 +195,7 @@ impl Cell {
 }
 
 #[derive(Debug)]
-pub enum SerialType {
+enum SerialType {
     String(String),
     Blob(Vec<u8>),
     NULL,
@@ -169,7 +215,7 @@ impl Display for SerialType {
 }
 
 #[derive(Debug)]
-pub struct Record {
+struct Record {
     pub columns: Vec<SerialType>,
 }
 
@@ -219,32 +265,5 @@ impl Record {
 
     pub fn get_column(&self, index: usize) -> &SerialType {
         &self.columns[index]
-    }
-}
-
-pub struct PageReader {
-    pub file_header: Option<FileHeader>,
-    pub page_header: PageHeader,
-    pub row_reader: RowReader,
-    pub page_num: usize,
-}
-
-impl PageReader {
-    pub fn from (file: &mut File, page_num: usize) -> Self {
-        if page_num == 1 {
-            Self {
-                file_header: Some(FileHeader::from(file).unwrap()),
-                page_header: PageHeader::from(file).unwrap(),
-                row_reader: RowReader::from(file).unwrap(),
-                page_num,
-            }
-        } else {
-            Self {
-                file_header: None,
-                page_header: PageHeader::from(file).unwrap(),
-                row_reader: RowReader::from(file).unwrap(),
-                page_num,
-            }
-        }   
     }
 }
