@@ -5,7 +5,7 @@ mod page;
 mod utils;
 
 use anyhow::Result;
-use page::{FileHeader, PageHeader, RowReader};
+use page::{FileHeader, PageHeader, PageReader, RowReader};
 use std::fs::File;
 
 use clap::{Parser, Subcommand};
@@ -23,44 +23,44 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// list db info
-    DbInfo {
-        table_name: Option<String>
-    },
+    DbInfo,
 
     /// list tables
     Tables,
+
+    Run {
+        statement: Option<String>
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::DbInfo { table_name } => {
-            if let Some(_table_name) = table_name {
-                let mut file = File::open(&cli.path)?;
-                let _file_header = FileHeader::from(&mut file)?;
-                let page_header = PageHeader::from(&mut file)?;
+        Commands::DbInfo => {
+            let mut file = File::open(&cli.path)?;
+            let file_header = FileHeader::from(&mut file)?;
+            let page_header = PageHeader::from(&mut file)?;
     
-                //println!("database page size: {}", file_header.page_size);
-                println!("number of tables: {}", page_header.cell_count);
-            } else {
-                let mut file = File::open(&cli.path)?;
-                let file_header = FileHeader::from(&mut file)?;
-                let page_header = PageHeader::from(&mut file)?;
-    
-                println!("database page size: {}", file_header.page_size);
-                println!("number of tables: {}", page_header.cell_count);
-
-                println!("file header: {:?}", file_header);
-                println!("page header: {:?}", page_header);
-            }
+            println!("database page size: {}", file_header.page_size);
+            println!("number of tables: {}", page_header.cell_count);
+            println!("file header: {:?}", file_header);
+            println!("page header: {:?}", page_header);
         },
         Commands::Tables => {
             let mut file = File::open(&cli.path)?;
-            let num_of_cell = PageHeader::from(&mut file)?.cell_count;
-            let row_reader = RowReader::from(&mut file, num_of_cell as usize)?;
+            let row_reader = RowReader::from(&mut file)?;
+            let num_of_cell = row_reader.pointers.len();
             for n in 0..num_of_cell {
-                println!("table{n}'s name is {}", row_reader.read(n.into())[1]);
+                println!("table{n}'s name is {}", row_reader.read(n as u32)[1]);
+            }
+        },
+        Commands::Run { statement } => {
+            let mut file = File::open(&cli.path)?;
+            if let Some(_stem) = statement {
+                let _page_reader = PageReader::from(&mut file, 1);
+            } else {
+                println!("No SQL statement to run!");
             }
         }
     }

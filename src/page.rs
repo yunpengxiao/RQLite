@@ -69,10 +69,8 @@ impl PageHeader {
 
     pub fn from(file: &mut File) -> Result<Self> {
         let mut buffer = [0; 2];
-
         file.seek(SeekFrom::Start(u64::try_from(FileHeader::FILE_HEADER_SIZE + 3)?))?;
         file.read_exact(&mut buffer)?;
-
         Ok(Self {
             cell_count: u16::from_be_bytes([buffer[0], buffer[1]]),
         })
@@ -88,8 +86,9 @@ pub struct RowReader {
 impl RowReader {
     const BUFFER_SIZE: usize = 1000;
 
-    pub fn from(file: &mut File, cell_count: usize) -> Result<Self> {
-        let mut buffer = vec![0; cell_count * 2];
+    pub fn from(file: &mut File) -> Result<Self> {
+        let cell_count = Self::get_cell_count(file).unwrap();
+        let mut buffer = vec![0; (cell_count as usize) * 2];
         let mut cell_pointers = Vec::new();
         // Page header size can be 12 bytes too, just use 8 here for simplicity
         file.seek(SeekFrom::Start(u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::MAX_PAGE_HEADER_SIZE)?))?;
@@ -116,6 +115,14 @@ impl RowReader {
     pub fn read(&self, row_num: u32) -> Vec<&SerialType> {
         self.cells[row_num as usize].record.columns.iter().collect()
     }
+
+    fn get_cell_count(file: &mut File) -> Result<u16> {
+        let mut buffer = [0; 2];
+        file.seek(SeekFrom::Start(u64::try_from(FileHeader::FILE_HEADER_SIZE + 3)?))?;
+        file.read_exact(&mut buffer)?;
+        Ok(u16::from_be_bytes([buffer[0], buffer[1]]))
+    }
+
 }
 
 #[derive(Debug)]
@@ -169,18 +176,13 @@ pub struct Record {
 impl Record {
     pub fn from(data: &[u8]) -> Result<Self> {
         let (record_head_size, first_type_offset) = read_variant(&data[..]);
-        //println!("record head size is {record_head_size}");
         let mut column_pointer = record_head_size;
         let mut serial_type_pointer: usize = first_type_offset;
         let mut columns: Vec<SerialType> = Vec::new();
         while serial_type_pointer != record_head_size as usize {
             let (serial_type, bytes_read) = read_variant(&data[serial_type_pointer..]);
-            
             let size_of_column: i64;
             let st: SerialType;
-
-            let x: u64 = (-1).try_into()?;
-
             if serial_type >= 12 && serial_type % 2 == 0 {
                 size_of_column = (serial_type - 12) / 2;
                 st = SerialType::Blob(data
@@ -217,5 +219,32 @@ impl Record {
 
     pub fn get_column(&self, index: usize) -> &SerialType {
         &self.columns[index]
+    }
+}
+
+pub struct PageReader {
+    pub file_header: Option<FileHeader>,
+    pub page_header: PageHeader,
+    pub row_reader: RowReader,
+    pub page_num: usize,
+}
+
+impl PageReader {
+    pub fn from (file: &mut File, page_num: usize) -> Self {
+        if page_num == 1 {
+            Self {
+                file_header: Some(FileHeader::from(file).unwrap()),
+                page_header: PageHeader::from(file).unwrap(),
+                row_reader: RowReader::from(file).unwrap(),
+                page_num,
+            }
+        } else {
+            Self {
+                file_header: None,
+                page_header: PageHeader::from(file).unwrap(),
+                row_reader: RowReader::from(file).unwrap(),
+                page_num,
+            }
+        }   
     }
 }
