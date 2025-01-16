@@ -3,6 +3,7 @@
 
 mod page;
 mod utils;
+mod parser;
 
 use anyhow::Result;
 use page::PageReader;
@@ -51,7 +52,7 @@ fn main() -> Result<()> {
         },
         Commands::Run { statement } => {
             if let Some(_stem) = statement {
-                let _page_reader = PageReader::from(&mut file, 1);
+
             } else {
                 println!("No SQL statement to run!");
             }

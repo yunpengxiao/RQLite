@@ -9,4 +9,5 @@ rust-version = "1.80"
 anyhow = "*"
 bytes = "*"
 thiserror = "*"
+nom = "*"
 clap = { version = "*", features = ["derive"] }
