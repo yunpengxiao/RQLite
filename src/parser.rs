@@ -5,17 +5,20 @@ use nom::sequence::tuple;
 use nom::IResult;
 use nom::branch::alt;
 
+#[derive(Debug)]
 pub enum SqlStatement {
     SELECT(SelectStatement),
     CREATE(CreateStatement),
 }
 
+#[derive(Debug)]
 pub struct SelectStatement {
     pub table: String,
     pub fields: Vec<String>,
     pub condition: String,
 }
 
+#[derive(Debug)]
 pub struct CreateStatement {
     pub nothing: String,
 }

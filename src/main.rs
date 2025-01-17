@@ -4,9 +4,11 @@
 mod page;
 mod utils;
 mod parser;
+mod executor;
 
 use anyhow::Result;
 use page::PageReader;
+use parser::sql_query;
 use std::fs::File;
 
 use clap::{Parser, Subcommand};
@@ -39,7 +41,7 @@ fn main() -> Result<()> {
     let mut file = File::open(&cli.path)?;
     let first_page = PageReader::from(&mut file, 1);
 
-    match &cli.command {
+    match cli.command {
         Commands::DbInfo => {
             println!("database page size: {}", first_page.get_page_size());
             println!("number of tables: {}", first_page.table_count());
@@ -51,8 +53,9 @@ fn main() -> Result<()> {
             }
         },
         Commands::Run { statement } => {
-            if let Some(_stem) = statement {
-
+            if let Some(stem) = statement {
+                let statement = sql_query(stem.as_str()).unwrap();
+                executor::execute(statement.1);
             } else {
                 println!("No SQL statement to run!");
             }
