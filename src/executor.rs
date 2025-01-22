@@ -28,6 +28,9 @@ impl Executor {
                     }
                 }
             }
+            SqlStatement::CREATE(creation_cmd) => {
+                println!("This is a create cmd, doing nothing for now!");
+            }
             _ => {
                 println!("Not implement yet");
             }

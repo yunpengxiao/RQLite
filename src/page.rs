@@ -442,6 +442,7 @@ struct TableSchema {
 
 impl TableSchema {
     pub fn from(sql: &String) -> Self {
+        
         Self {
             table_name: "test".to_string(),
             cols: Vec::new(),
