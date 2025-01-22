@@ -7,7 +7,8 @@ mod parser;
 mod executor;
 
 use anyhow::Result;
-use page::PageReader;
+use executor::Executor;
+use page::{Database, PageReader};
 use parser::sql_query;
 use std::fs::File;
 
@@ -39,23 +40,25 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut file = File::open(&cli.path)?;
-    let first_page = PageReader::from(&mut file, 1);
+    let database = Database::from(&mut file)?;
 
     match cli.command {
         Commands::DbInfo => {
-            println!("database page size: {}", first_page.get_page_size());
-            println!("number of tables: {}", first_page.table_count());
+            println!("database page size: {}", database.get_page_size());
+            println!("database page count: {}", database.get_page_count());
         },
         Commands::Tables => {
-            let table_names = first_page.get_table_names();
+            let table_names = database.get_table_names();
             for name in table_names {
                 println!("{name}");
             }
         },
         Commands::Run { statement } => {
             if let Some(stem) = statement {
-                let statement = sql_query(stem.as_str()).unwrap();
-                executor::execute(statement.1);
+                let statement = 
+                    sql_query(stem.as_str()).unwrap();
+                let executor = Executor::from(database);
+                executor.execute(statement.1);
             } else {
                 println!("No SQL statement to run!");
             }
