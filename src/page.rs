@@ -45,8 +45,10 @@ impl Database {
         let file_header = FileHeader::from(file)?;
         let mut pages: Vec<PageReader> = Vec::new();
         for i in 1..=file_header.page_count {
+            println!("Start reading page {}", i);
             let page = PageReader::from(file, i as u64, file_header.page_size as u64);
             pages.push(page);
+            println!("-------------------------------");
         }
 
         let first_page = &pages[0];
@@ -113,6 +115,7 @@ impl Database {
                 let page = &self.pages[table_location - 1];
                 for n in 0..page.row_reader.cells.len() {
                     let row = page.row_reader.read(n as u32);
+                    println!("the result is {:?}", row);
                     match row[i] {
                         SerialType::String(s) => result.push(s.clone()),
                         _ => println!("the format is not correct"),
@@ -255,6 +258,7 @@ const MAX_PAGE_HEADER_SIZE: usize = 8;
     pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
         let mut buffer = [0; 2];
         let offset = get_page_start_offset(page_num, page_size);
+        println!("Reading Page header from offset {}", offset);
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(&mut buffer)?;
         Ok(Self {
@@ -270,15 +274,17 @@ struct RowReader {
 }
 
 impl RowReader {
-    const BUFFER_SIZE: usize = 40960;
+    const BUFFER_SIZE: usize = 4096;
 
     pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
         let cell_count = Self::get_cell_count(file, page_num, page_size).unwrap();
+        println!("Page {} We have {} cells", page_num, cell_count);
         let mut buffer = vec![0; (cell_count as usize) * 2];
         let mut cell_pointers = Vec::new();
-        let page_offset = get_page_start_offset(page_num, page_size);
+        let page_offset = get_page_start_offset(page_num, page_size) + PageHeader::MAX_PAGE_HEADER_SIZE as u64;
         // Page header size can be 12 bytes too, just use 8 here for simplicity
-        file.seek(SeekFrom::Start(page_offset + PageHeader::MAX_PAGE_HEADER_SIZE as u64))?;
+        println!("Reading cell pointers from offset {} with bytes {}", page_offset,  (cell_count as usize) * 2);
+        file.seek(SeekFrom::Start(page_offset))?;
         file.read_exact(&mut buffer[..])?;
         for arr in buffer.as_slice().as_array_iter() {
             let offset = u16::from_be_bytes(*arr);
@@ -288,7 +294,9 @@ impl RowReader {
         let mut cells: Vec<Cell> = Vec::new();
         for cell_location in &cell_pointers {
             let mut buffer = [0; Self::BUFFER_SIZE];
-            file.seek(SeekFrom::Start(page_offset + (*cell_location) as u64))?;
+            let offset = (page_num - 1) * page_size + (*cell_location) as u64;
+            println!("Reading cells from offset {} with size {}.", offset, Self::BUFFER_SIZE);
+            file.seek(SeekFrom::Start(offset))?;
             let _ = file.read_exact(&mut buffer);
             cells.push(Cell::from(&buffer)?);
         }
@@ -305,7 +313,9 @@ impl RowReader {
 
     fn get_cell_count(file: &mut File, page_num: u64, page_size: u64) -> Result<u16> {
         let mut buffer = [0; 2];
-        file.seek(SeekFrom::Start(get_page_start_offset(page_num, page_size)+ 3))?;
+        let offset = get_page_start_offset(page_num, page_size) + 3;
+        println!("Getting cell count from {} with size 2.", offset);
+        file.seek(SeekFrom::Start(offset))?;
         file.read_exact(&mut buffer)?;
         Ok(u16::from_be_bytes([buffer[0], buffer[1]]))
     }
@@ -391,6 +401,7 @@ impl Record {
                 size_of_column = 0;
                 st = SerialType::NULL;
             };
+            println!("Read col {:?} with size {}", st, size_of_column);
 
             columns.push(st);
             serial_type_pointer += bytes_read;
