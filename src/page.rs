@@ -270,14 +270,15 @@ struct RowReader {
 }
 
 impl RowReader {
-    const BUFFER_SIZE: usize = 1000;
+    const BUFFER_SIZE: usize = 40960;
 
     pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
         let cell_count = Self::get_cell_count(file, page_num, page_size).unwrap();
         let mut buffer = vec![0; (cell_count as usize) * 2];
         let mut cell_pointers = Vec::new();
+        let page_offset = get_page_start_offset(page_num, page_size);
         // Page header size can be 12 bytes too, just use 8 here for simplicity
-        file.seek(SeekFrom::Start(get_page_start_offset(page_num, page_size) + PageHeader::MAX_PAGE_HEADER_SIZE as u64))?;
+        file.seek(SeekFrom::Start(page_offset + PageHeader::MAX_PAGE_HEADER_SIZE as u64))?;
         file.read_exact(&mut buffer[..])?;
         for arr in buffer.as_slice().as_array_iter() {
             let offset = u16::from_be_bytes(*arr);
@@ -287,7 +288,7 @@ impl RowReader {
         let mut cells: Vec<Cell> = Vec::new();
         for cell_location in &cell_pointers {
             let mut buffer = [0; Self::BUFFER_SIZE];
-            file.seek(SeekFrom::Start((*cell_location) as u64))?;
+            file.seek(SeekFrom::Start(page_offset + (*cell_location) as u64))?;
             let _ = file.read_exact(&mut buffer);
             cells.push(Cell::from(&buffer)?);
         }
