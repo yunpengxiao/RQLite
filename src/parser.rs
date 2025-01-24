@@ -1,5 +1,6 @@
-use nom::bytes::complete::{tag, tag_no_case};
+use nom::bytes::complete::{tag, tag_no_case, take_while1};
 use nom::character::complete::{alpha1, multispace0, multispace1};
+use nom::character::is_alphanumeric;
 use nom::combinator::{map, opt};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, terminated, tuple};
@@ -59,7 +60,7 @@ fn creation(input: &str) -> IResult<&str, CreateStatement> {
         multispace1,
         tag_no_case("table".as_bytes()),
         multispace1,
-        alpha1,
+        take_while1(is_sql_identifier),
         multispace0,
         tag("(".as_bytes()),
         multispace0,
@@ -117,4 +118,8 @@ pub fn column_constraint(i: &str) -> IResult<&str, String> {
 
 fn ws_sep_comma(i: &str) -> IResult<&str,&str> {
     delimited(multispace0, tag(","), multispace0)(i)
+}
+
+pub fn is_sql_identifier(chr: char) -> bool {
+    is_alphanumeric(chr as u8) || chr == '_' || chr == '@'
 }

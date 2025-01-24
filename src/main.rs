@@ -8,7 +8,7 @@ mod executor;
 
 use anyhow::Result;
 use executor::Executor;
-use page::{Database, PageReader};
+use page::Database;
 use parser::sql_query;
 use std::fs::File;
 
@@ -41,6 +41,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut file = File::open(&cli.path)?;
     let database = Database::from(&mut file)?;
+    println!("{:?}", database);
 
     match cli.command {
         Commands::DbInfo => {

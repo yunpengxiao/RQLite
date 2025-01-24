@@ -5,6 +5,8 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use thiserror::Error;
 
+use crate::parser::sql_query;
+use crate::parser::SqlStatement;
 use crate::utils::read_variant;
 use crate::utils::MyCoolArrayStuff;
 
@@ -23,6 +25,10 @@ pub enum MyError {
 
     #[error("Slice error: {0}")]
     Slice(#[from] std::array::TryFromSliceError, std::backtrace::Backtrace),
+
+    /*#[error("Parser error: {0}")]
+    Parser(#[from] IResult<&'a str, SqlStatement>, std::backtrace::Backtrace),
+    */
 }
 
 type Result<T> = core::result::Result<T, MyError>;
@@ -38,8 +44,8 @@ impl Database {
     pub fn from(file: &mut File) -> Result<Self> {
         let file_header = FileHeader::from(file)?;
         let mut pages: Vec<PageReader> = Vec::new();
-        for i in 0..file_header.page_count {
-            let page = PageReader::from(file, i as usize, file_header.page_size as usize);
+        for i in 1..=file_header.page_count {
+            let page = PageReader::from(file, i as u64, file_header.page_size as u64);
             pages.push(page);
         }
 
@@ -99,7 +105,22 @@ impl Database {
     }
 
     pub fn get_column(&self, table_name: &str, column_name: &str) -> Vec<String> {
-        Vec::new()
+        let mut result = Vec::new();
+        let table_schema = self.table_schemas.get(table_name).unwrap();
+        for i in 0..table_schema.cols.len() {
+            if table_schema.cols[i] == column_name {
+                let table_location = self.get_table_location(table_name);
+                let page = &self.pages[table_location - 1];
+                for n in 0..page.row_reader.cells.len() {
+                    let row = page.row_reader.read(n as u32);
+                    match row[i] {
+                        SerialType::String(s) => result.push(s.clone()),
+                        _ => println!("the format is not correct"),
+                    }
+                }
+            }
+        }
+        result
     }
 
     fn get_table_location(&self, table_name: &str) -> usize {
@@ -164,7 +185,7 @@ pub struct FileHeader {
 }
 
 impl FileHeader {
-    const FILE_HEADER_SIZE: usize = 100;
+const FILE_HEADER_SIZE: usize = 100;
 
     pub fn from(file: &mut File) -> Result<Self> {
         let mut header = [0; Self::FILE_HEADER_SIZE];
@@ -190,14 +211,14 @@ impl FileHeader {
 pub struct PageReader {
     pub page_header: PageHeader,
     pub row_reader: RowReader,
-    pub page_num: usize,
+    pub page_num: u64,
 }
 
 impl PageReader {
-    pub fn from (file: &mut File, page_num: usize, page_size: usize) -> Self {
+    pub fn from (file: &mut File, page_num: u64, page_size: u64) -> Self {
         Self {
-            page_header: PageHeader::from(file, page_num == 1).unwrap(),
-            row_reader: RowReader::from(file).unwrap(),
+            page_header: PageHeader::from(file, page_num, page_size).unwrap(),
+            row_reader: RowReader::from(file, page_num, page_size).unwrap(),
             page_num,
         }
     }
@@ -229,15 +250,11 @@ pub struct PageHeader {
 }
 
 impl PageHeader {
-    const MAX_PAGE_HEADER_SIZE: usize = 8;
+const MAX_PAGE_HEADER_SIZE: usize = 8;
 
-    pub fn from(file: &mut File, is_first_page: bool) -> Result<Self> {
+    pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
         let mut buffer = [0; 2];
-        let offset = if is_first_page == true {
-            u64::try_from(FileHeader::FILE_HEADER_SIZE + 3)?
-        } else {
-            3
-        };
+        let offset = get_page_start_offset(page_num, page_size);
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(&mut buffer)?;
         Ok(Self {
@@ -255,12 +272,12 @@ struct RowReader {
 impl RowReader {
     const BUFFER_SIZE: usize = 1000;
 
-    pub fn from(file: &mut File) -> Result<Self> {
-        let cell_count = Self::get_cell_count(file).unwrap();
+    pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
+        let cell_count = Self::get_cell_count(file, page_num, page_size).unwrap();
         let mut buffer = vec![0; (cell_count as usize) * 2];
         let mut cell_pointers = Vec::new();
         // Page header size can be 12 bytes too, just use 8 here for simplicity
-        file.seek(SeekFrom::Start(u64::try_from(FileHeader::FILE_HEADER_SIZE + PageHeader::MAX_PAGE_HEADER_SIZE)?))?;
+        file.seek(SeekFrom::Start(get_page_start_offset(page_num, page_size) + PageHeader::MAX_PAGE_HEADER_SIZE as u64))?;
         file.read_exact(&mut buffer[..])?;
         for arr in buffer.as_slice().as_array_iter() {
             let offset = u16::from_be_bytes(*arr);
@@ -285,9 +302,9 @@ impl RowReader {
         self.cells[row_num as usize].record.columns.iter().collect()
     }
 
-    fn get_cell_count(file: &mut File) -> Result<u16> {
+    fn get_cell_count(file: &mut File, page_num: u64, page_size: u64) -> Result<u16> {
         let mut buffer = [0; 2];
-        file.seek(SeekFrom::Start(u64::try_from(FileHeader::FILE_HEADER_SIZE + 3)?))?;
+        file.seek(SeekFrom::Start(get_page_start_offset(page_num, page_size)+ 3))?;
         file.read_exact(&mut buffer)?;
         Ok(u16::from_be_bytes([buffer[0], buffer[1]]))
     }
@@ -442,10 +459,28 @@ struct TableSchema {
 
 impl TableSchema {
     pub fn from(sql: &String) -> Self {
-        
-        Self {
-            table_name: "test".to_string(),
-            cols: Vec::new(),
+        let (_, sql_cmd) = sql_query(sql).unwrap();
+        let mut table_name: String = String::new();
+        let mut cols: Vec<String> = Vec::new();
+        match sql_cmd {
+            SqlStatement::CREATE(cs) => {
+                table_name = cs.table_name;
+                cols = cs.cols;
+            }
+            _ => println!("Something is wrong, the schema is not a creation sql."),
         }
+        Self {
+            table_name,
+            cols,
+        }
+    }
+}
+
+fn get_page_start_offset(page_num: u64, page_size: u64) -> u64 {
+    let start = (page_num - 1) * page_size;
+    if page_num == 1 {
+        start + FileHeader::FILE_HEADER_SIZE as u64
+    } else {
+        start
     }
 }

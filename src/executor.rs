@@ -23,8 +23,8 @@ impl Executor {
                     println!("{}", self.database.count_rows(table_name.as_str()));
                 } else {
                     for col in fields {
-                        println!("{}: {}", 
-                            col, col/*self.database.get_column(table_name.as_str(), col.as_str())*/);
+                        println!("{}: {:?}", 
+                            col, self.database.get_column(table_name.as_str(), col.as_str()));
                     }
                 }
             }
