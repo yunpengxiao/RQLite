@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::SeekFrom;
+use nom::Err;
 use thiserror::Error;
 
 use crate::parser::sql_query;
@@ -133,8 +134,8 @@ impl Database {
             let name = first_page.row_reader
                 .read(n as u32)[1].to_string();
             if name == table_name {
-                /*let table_location: i64 = first_page
-                    .row_reader.read(n as u32)[3].try_into().unwrap();*/
+                //let table_location: i64 = self.pages[0].row_reader.read(n as u32)[3].try_into().unwrap();
+                //println!("value: {}", table_location);
                 match first_page.row_reader.read(n as u32)[3] {
                     SerialType::Integer(i) => {
                         println!("The location for table {} is {}", 
@@ -452,7 +453,41 @@ impl Display for SerialType {
     }
 }
 
-impl TryInto<i64> for SerialType {
+// TryFrom definetion macro
+macro_rules! convert {
+    ($t:ty, $x:ident) => {
+        #[automatically_derived]
+        impl TryFrom<&SerialType> for $t {
+            type Error = &'static str;
+        
+            fn try_from(st: &SerialType) -> std::result::Result<Self, Self::Error> {
+                if let SerialType::$x(i) = st {
+                    Ok(i.clone())
+                } else {
+                    Err("wrong")
+                }
+            }
+        }
+    }
+}
+
+convert!(i64, Integer);
+convert!(Vec<u8>, Blob);
+convert!(String, String);
+
+// impl TryFrom<&SerialType> for i64 {
+//     type Error = &'static str;
+
+//     fn try_from(st: &SerialType) -> std::result::Result<Self, Self::Error> {
+//         if let SerialType::Integer(i) = st {
+//             Ok(*i)
+//         } else {
+//             Err("wrong")
+//         }
+//     }
+// }
+
+/*impl TryInto<i64> for &SerialType {
     type Error = &'static str;
 
     fn try_into(self) -> std::result::Result<i64, Self::Error>  {
@@ -461,7 +496,7 @@ impl TryInto<i64> for SerialType {
             _ => Err("Not the integer type"),
         }
     }
-}
+}*/
 
 #[derive(Debug, Clone)]
 struct TableSchema {
