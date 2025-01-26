@@ -3,7 +3,7 @@ use nom::character::complete::{alpha1, multispace0, multispace1};
 use nom::character::is_alphanumeric;
 use nom::combinator::{map, opt};
 use nom::multi::{many0, many1};
-use nom::sequence::{delimited, terminated, tuple};
+use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::IResult;
 use nom::branch::alt;
 
@@ -28,7 +28,7 @@ pub struct CreateStatement {
 
 fn selection(input: &str) -> IResult<&str, SelectStatement> {
     let (remaining,
-        (_, _, fields, _, _, _, table, _, _, _, condition),
+        (_, _, fields, _, _, _, table, _, condition),
     ) = tuple((
         tag_no_case("select".as_bytes()),
         multispace1,
@@ -37,17 +37,19 @@ fn selection(input: &str) -> IResult<&str, SelectStatement> {
         tag_no_case("from".as_bytes()),
         multispace1,
         alpha1,
-        multispace1,
-        tag_no_case("where".as_bytes()),
-        multispace1,
-        alpha1,
+        opt(multispace1),
+        opt(where_condition)
     ))(input)?;
+    let condition = match condition {
+        Some(c) => c,
+        None => "".to_string(),
+    };
     Ok((
         remaining,
         SelectStatement {
             table: table.to_owned(), 
             fields: Vec::from([fields.to_owned()]),
-            condition: condition.to_owned(),
+            condition,
         }
     ))
 }
@@ -63,7 +65,7 @@ fn creation(input: &str) -> IResult<&str, CreateStatement> {
         take_while1(is_sql_identifier),
         multispace0,
         tag("(".as_bytes()),
-        multispace0,
+        multispace0, 
         field_specification_list,
         multispace0,
         tag(")".as_bytes())
@@ -82,6 +84,13 @@ pub fn sql_query(input: &str) -> IResult<&str, SqlStatement> {
         map(selection, |r| SqlStatement::SELECT(r)),
         map(creation, |r| SqlStatement::CREATE(r)),
     ))(input)
+}
+
+pub fn where_condition(input: &str) -> IResult<&str, String> {
+    let (remaining, condition) = 
+        preceded(tag_no_case("where".as_bytes()), 
+                preceded(multispace1, alpha1))(input)?;
+    Ok((remaining, condition.to_string()))
 }
 
 fn field_specification_list(i: &str) -> IResult<&str, Vec<String>> {
