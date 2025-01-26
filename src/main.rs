@@ -10,7 +10,7 @@ use anyhow::Result;
 use executor::Executor;
 use page::Database;
 use parser::sql_query;
-use std::fs::File;
+use std::{fs::File, io::{BufRead, BufReader, Write}, net::TcpListener};
 
 use clap::{Parser, Subcommand};
 
@@ -35,6 +35,8 @@ enum Commands {
     Run {
         statement: Option<String>
     },
+
+    Web,
 }
 
 fn main() -> Result<()> {
@@ -62,6 +64,23 @@ fn main() -> Result<()> {
                 executor.execute(statement.1);
             } else {
                 println!("No SQL statement to run!");
+            }
+        },
+        Commands::Web => {
+            let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(mut stream) => {
+                        let buf_reader = BufReader::new(&mut stream);
+                        let request_lines = buf_reader.lines().into_iter().next().unwrap().unwrap();
+                        println!("{}", request_lines);
+                        let response = "HTTP/1.1 200 OK\r\n\r\n";
+                        stream.write_all(response.as_bytes()).unwrap();
+                    }
+                    Err(e) => {
+                        println!("error: {}", e);
+                    }
+                }
             }
         }
     }
