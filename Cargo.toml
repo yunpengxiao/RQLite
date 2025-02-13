@@ -11,3 +11,5 @@ bytes = "*"
 thiserror = "*"
 nom = "*"
 clap = { version = "*", features = ["derive"] }
+axum = "*"
+tokio = { version = "*", features = ["full"] }

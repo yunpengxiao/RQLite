@@ -1,9 +1,9 @@
+use nom::Err;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::SeekFrom;
-use nom::Err;
 use thiserror::Error;
 
 use crate::parser::sql_query;
@@ -22,11 +22,16 @@ pub enum MyError {
     Offset(#[from] std::num::TryFromIntError, std::backtrace::Backtrace),
 
     #[error("utf8 error: {0}")]
-    Utf8(#[from] std::string::FromUtf8Error, std::backtrace::Backtrace),
+    Utf8(
+        #[from] std::string::FromUtf8Error,
+        std::backtrace::Backtrace,
+    ),
 
     #[error("Slice error: {0}")]
-    Slice(#[from] std::array::TryFromSliceError, std::backtrace::Backtrace),
-
+    Slice(
+        #[from] std::array::TryFromSliceError,
+        std::backtrace::Backtrace,
+    ),
     /*#[error("Parser error: {0}")]
     Parser(#[from] IResult<&'a str, SqlStatement>, std::backtrace::Backtrace),
     */
@@ -46,10 +51,10 @@ impl Database {
         let file_header = FileHeader::from(file)?;
         let mut pages: Vec<PageReader> = Vec::new();
         for i in 1..=file_header.page_count {
-            println!("Start reading page {}", i);
+            //println!("Start reading page {}", i);
             let page = PageReader::from(file, i as u64, file_header.page_size as u64);
             pages.push(page);
-            println!("-------------------------------");
+            //println!("-------------------------------");
         }
 
         let first_page = &pages[0];
@@ -58,7 +63,7 @@ impl Database {
             let table_name = first_page.row_reader.read(n as u32)[1].to_string();
             let table_sql = first_page.row_reader.read(n as u32)[4].to_string();
             table_schemas.insert(table_name, TableSchema::from(&table_sql));
-        } 
+        }
 
         Ok(Self {
             file_header,
@@ -76,8 +81,8 @@ impl Database {
     }
 
     /*
-        Every SQLite database contains a single "schema table" that stores the schema for that database. 
-        The schema for a database is a description of all of the other tables, indexes, triggers, and 
+        Every SQLite database contains a single "schema table" that stores the schema for that database.
+        The schema for a database is a description of all of the other tables, indexes, triggers, and
         views that are contained within the database. The schema table looks like this:
 
             CREATE TABLE sqlite_schema(
@@ -90,14 +95,14 @@ impl Database {
 
         we can parse this table to get all the table name and schema. This table is in the first page of
         every Sqlite database file.
-    */ 
-    
+    */
+
     pub fn get_table_names(&self) -> Vec<String> {
         let mut result: Vec<String> = Vec::new();
         let first_page = &self.pages[0];
         for n in 0..first_page.row_reader.pointers.len() {
             result.push(first_page.row_reader.read(n as u32)[1].to_string());
-        } 
+        }
         result
     }
 
@@ -131,15 +136,13 @@ impl Database {
         let first_page = &self.pages[0];
         // How to return the value directly in the for loop here?
         for n in 0..first_page.row_reader.pointers.len() {
-            let name = first_page.row_reader
-                .read(n as u32)[1].to_string();
+            let name = first_page.row_reader.read(n as u32)[1].to_string();
             if name == table_name {
                 //let table_location: i64 = self.pages[0].row_reader.read(n as u32)[3].try_into().unwrap();
                 //println!("value: {}", table_location);
                 match first_page.row_reader.read(n as u32)[3] {
                     SerialType::Integer(i) => {
-                        println!("The location for table {} is {}", 
-                        table_name, i);
+                        println!("The location for table {} is {}", table_name, i);
                         return *i as usize;
                     }
                     _ => {
@@ -152,35 +155,33 @@ impl Database {
     }
 }
 
-
-
 /*
-    File Header Format
-        Offset	Size	Description
-        0	    16	    The header string: "SQLite format 3\000"
-        16	    2	    The database page size in bytes. Must be a power of two between 512 and 32768 inclusive, or the value 1 representing a page size of 65536.
-        18	    1	    File format write version. 1 for legacy; 2 for WAL.
-        19	    1	    File format read version. 1 for legacy; 2 for WAL.
-        20	    1	    Bytes of unused "reserved" space at the end of each page. Usually 0.
-        21	    1	    Maximum embedded payload fraction. Must be 64.
-        22	    1	    Minimum embedded payload fraction. Must be 32.
-        23	    1	    Leaf payload fraction. Must be 32.
-        24	    4	    File change counter.
-        28	    4	    Size of the database file in pages. The "in-header database size".
-        32	    4	    Page number of the first freelist trunk page.
-        36	    4	    Total number of freelist pages.
-        40	    4	    The schema cookie.
-        44	    4	    The schema format number. Supported schema formats are 1, 2, 3, and 4.
-        48	    4	    Default page cache size.
-        52	    4	    The page number of the largest root b-tree page when in auto-vacuum or incremental-vacuum modes, or zero otherwise.
-        56	    4	    The database text encoding. A value of 1 means UTF-8. A value of 2 means UTF-16le. A value of 3 means UTF-16be.
-        60	    4	    The "user version" as read and set by the user_version pragma.
-        64	    4	    True (non-zero) for incremental-vacuum mode. False (zero) otherwise.
-        68	    4	    The "Application ID" set by PRAGMA application_id.
-        72	    20	    Reserved for expansion. Must be zero.
-        92	    4	    The version-valid-for number.
-        96	    4	    SQLITE_VERSION_NUMBER
- */
+   File Header Format
+       Offset	Size	Description
+       0	    16	    The header string: "SQLite format 3\000"
+       16	    2	    The database page size in bytes. Must be a power of two between 512 and 32768 inclusive, or the value 1 representing a page size of 65536.
+       18	    1	    File format write version. 1 for legacy; 2 for WAL.
+       19	    1	    File format read version. 1 for legacy; 2 for WAL.
+       20	    1	    Bytes of unused "reserved" space at the end of each page. Usually 0.
+       21	    1	    Maximum embedded payload fraction. Must be 64.
+       22	    1	    Minimum embedded payload fraction. Must be 32.
+       23	    1	    Leaf payload fraction. Must be 32.
+       24	    4	    File change counter.
+       28	    4	    Size of the database file in pages. The "in-header database size".
+       32	    4	    Page number of the first freelist trunk page.
+       36	    4	    Total number of freelist pages.
+       40	    4	    The schema cookie.
+       44	    4	    The schema format number. Supported schema formats are 1, 2, 3, and 4.
+       48	    4	    Default page cache size.
+       52	    4	    The page number of the largest root b-tree page when in auto-vacuum or incremental-vacuum modes, or zero otherwise.
+       56	    4	    The database text encoding. A value of 1 means UTF-8. A value of 2 means UTF-16le. A value of 3 means UTF-16be.
+       60	    4	    The "user version" as read and set by the user_version pragma.
+       64	    4	    True (non-zero) for incremental-vacuum mode. False (zero) otherwise.
+       68	    4	    The "Application ID" set by PRAGMA application_id.
+       72	    20	    Reserved for expansion. Must be zero.
+       92	    4	    The version-valid-for number.
+       96	    4	    SQLITE_VERSION_NUMBER
+*/
 
 #[derive(Debug, Clone)]
 pub struct FileHeader {
@@ -189,7 +190,7 @@ pub struct FileHeader {
 }
 
 impl FileHeader {
-const FILE_HEADER_SIZE: usize = 100;
+    const FILE_HEADER_SIZE: usize = 100;
 
     pub fn from(file: &mut File) -> Result<Self> {
         let mut header = [0; Self::FILE_HEADER_SIZE];
@@ -219,7 +220,7 @@ pub struct PageReader {
 }
 
 impl PageReader {
-    pub fn from (file: &mut File, page_num: u64, page_size: u64) -> Self {
+    pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Self {
         Self {
             page_header: PageHeader::from(file, page_num, page_size).unwrap(),
             row_reader: RowReader::from(file, page_num, page_size).unwrap(),
@@ -254,12 +255,12 @@ pub struct PageHeader {
 }
 
 impl PageHeader {
-const MAX_PAGE_HEADER_SIZE: usize = 8;
+    const MAX_PAGE_HEADER_SIZE: usize = 8;
 
     pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
         let mut buffer = [0; 2];
         let offset = get_page_start_offset(page_num, page_size);
-        println!("Reading Page header from offset {}", offset);
+        //println!("Reading Page header from offset {}", offset);
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(&mut buffer)?;
         Ok(Self {
@@ -279,12 +280,13 @@ impl RowReader {
 
     pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
         let cell_count = Self::get_cell_count(file, page_num, page_size).unwrap();
-        println!("Page {} We have {} cells", page_num, cell_count);
+        //println!("Page {} We have {} cells", page_num, cell_count);
         let mut buffer = vec![0; (cell_count as usize) * 2];
         let mut cell_pointers = Vec::new();
-        let page_offset = get_page_start_offset(page_num, page_size) + PageHeader::MAX_PAGE_HEADER_SIZE as u64;
+        let page_offset =
+            get_page_start_offset(page_num, page_size) + PageHeader::MAX_PAGE_HEADER_SIZE as u64;
         // Page header size can be 12 bytes too, just use 8 here for simplicity
-        println!("Reading cell pointers from offset {} with bytes {}", page_offset,  (cell_count as usize) * 2);
+        //println!("Reading cell pointers from offset {} with bytes {}", page_offset,  (cell_count as usize) * 2);
         file.seek(SeekFrom::Start(page_offset))?;
         file.read_exact(&mut buffer[..])?;
         for arr in buffer.as_slice().as_array_iter() {
@@ -296,7 +298,11 @@ impl RowReader {
         for cell_location in &cell_pointers {
             let mut buffer = [0; Self::BUFFER_SIZE];
             let offset = (page_num - 1) * page_size + (*cell_location) as u64;
-            println!("Reading cells from offset {} with size {}.", offset, Self::BUFFER_SIZE);
+            /*println!(
+                "Reading cells from offset {} with size {}.",
+                offset,
+                Self::BUFFER_SIZE
+            );*/
             file.seek(SeekFrom::Start(offset))?;
             let _ = file.read_exact(&mut buffer);
             cells.push(Cell::from(&buffer)?);
@@ -315,18 +321,17 @@ impl RowReader {
     fn get_cell_count(file: &mut File, page_num: u64, page_size: u64) -> Result<u16> {
         let mut buffer = [0; 2];
         let offset = get_page_start_offset(page_num, page_size) + 3;
-        println!("Getting cell count from {} with size 2.", offset);
+        //println!("Getting cell count from {} with size 2.", offset);
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(&mut buffer)?;
         Ok(u16::from_be_bytes([buffer[0], buffer[1]]))
     }
-
 }
 
 /* Cell Format:
-    * The size of the record, in bytes (varint)
-    * The rowid (varint)
-    * The record (record format)
+ * The size of the record, in bytes (varint)
+ * The rowid (varint)
+ * The record (record format)
  */
 
 #[derive(Debug, Clone)]
@@ -352,15 +357,14 @@ impl Cell {
     }
 }
 
-
 /*
-    Record Format
-      * Header:
-       - Size of the header, including this value (varint)
-       - Serial type code for each column in the record, in order (varint)
-      * Body: 
-       - The value of each column in the record, in order (format varies based on serial type code)
- */
+   Record Format
+     * Header:
+      - Size of the header, including this value (varint)
+      - Serial type code for each column in the record, in order (varint)
+     * Body:
+      - The value of each column in the record, in order (format varies based on serial type code)
+*/
 
 #[derive(Debug, Clone)]
 struct Record {
@@ -379,30 +383,42 @@ impl Record {
             let st: SerialType;
             if serial_type >= 12 && serial_type % 2 == 0 {
                 size_of_column = (serial_type - 12) / 2;
-                st = SerialType::Blob(data
-                    [(column_pointer as usize)..(column_pointer as usize) + (size_of_column as usize)]
-                    .to_vec());
+                st = SerialType::Blob(
+                    data[(column_pointer as usize)
+                        ..(column_pointer as usize) + (size_of_column as usize)]
+                        .to_vec(),
+                );
             } else if serial_type >= 13 && serial_type % 2 != 0 {
                 size_of_column = (serial_type - 13) / 2;
-                st = SerialType::String(String::from_utf8(data
-                    [(column_pointer as usize)..(column_pointer as usize) + (size_of_column as usize)]
-                    .to_vec())?);
+                st = SerialType::String(String::from_utf8(
+                    data[(column_pointer as usize)
+                        ..(column_pointer as usize) + (size_of_column as usize)]
+                        .to_vec(),
+                )?);
             } else if serial_type >= 1 && serial_type <= 4 {
                 size_of_column = serial_type;
                 let cp = column_pointer as usize;
                 let cp_end = cp + size_of_column as usize;
                 st = match serial_type {
-                    1 => SerialType::Integer(i8::from_be_bytes(data[cp..cp_end].try_into()?).into()),
-                    2 => SerialType::Integer(i16::from_be_bytes(data[cp..cp_end].try_into()?).into()),
-                    4 => SerialType::Integer(i32::from_be_bytes(data[cp..cp_end].try_into()?).into()),
-                    8 => SerialType::Integer(i64::from_be_bytes(data[cp..cp_end].try_into()?).into()),
+                    1 => {
+                        SerialType::Integer(i8::from_be_bytes(data[cp..cp_end].try_into()?).into())
+                    }
+                    2 => {
+                        SerialType::Integer(i16::from_be_bytes(data[cp..cp_end].try_into()?).into())
+                    }
+                    4 => {
+                        SerialType::Integer(i32::from_be_bytes(data[cp..cp_end].try_into()?).into())
+                    }
+                    8 => {
+                        SerialType::Integer(i64::from_be_bytes(data[cp..cp_end].try_into()?).into())
+                    }
                     _ => unreachable!(),
                 };
             } else {
                 size_of_column = 0;
                 st = SerialType::NULL;
             };
-            println!("Read col {:?} with size {}", st, size_of_column);
+            //println!("Read col {:?} with size {}", st, size_of_column);
 
             columns.push(st);
             serial_type_pointer += bytes_read;
@@ -459,7 +475,7 @@ macro_rules! convert {
         #[automatically_derived]
         impl TryFrom<&SerialType> for $t {
             type Error = &'static str;
-        
+
             fn try_from(st: &SerialType) -> std::result::Result<Self, Self::Error> {
                 if let SerialType::$x(i) = st {
                     Ok(i.clone())
@@ -468,7 +484,7 @@ macro_rules! convert {
                 }
             }
         }
-    }
+    };
 }
 
 convert!(i64, Integer);
@@ -516,10 +532,7 @@ impl TableSchema {
             }
             _ => println!("Something is wrong, the schema is not a creation sql."),
         }
-        Self {
-            table_name,
-            cols,
-        }
+        Self { table_name, cols }
     }
 }
 
