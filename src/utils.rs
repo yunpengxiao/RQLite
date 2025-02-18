@@ -1,3 +1,7 @@
+use core::panic;
+
+use crate::page::PageType;
+
 pub struct ArrayIter<'a, T, const N: usize> {
     iter: std::slice::ChunksExact<'a, T>,
 }
@@ -72,4 +76,14 @@ pub fn read_variant(bytes: &[u8]) -> (i64, usize) {
         }
     }
     (varint, bytes_read)
+}
+
+pub fn get_page_type(t: u8) -> PageType {
+    match t {
+        2 => PageType::IndexInterior,
+        5 => PageType::TableInterior,
+        10 => PageType::IndexLeaf,
+        13 => PageType::TableLeaf,
+        _ => panic!("Something wrong"),
+    }
 }

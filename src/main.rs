@@ -1,14 +1,16 @@
 #![feature(backtrace_frames)]
 #![feature(error_generic_member_access)]
 
+mod database;
 mod executor;
 mod page;
 mod parser;
+mod table;
 mod utils;
 
 use anyhow::Result;
+use database::Database;
 use executor::Executor;
-use page::Database;
 use parser::sql_query;
 use std::{
     fs::File,

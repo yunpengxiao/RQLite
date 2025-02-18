@@ -1,13 +1,9 @@
-use nom::Err;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use thiserror::Error;
 
-use crate::parser::sql_query;
-use crate::parser::SqlStatement;
 use crate::utils::read_variant;
 use crate::utils::MyCoolArrayStuff;
 
@@ -32,130 +28,12 @@ pub enum MyError {
         #[from] std::array::TryFromSliceError,
         std::backtrace::Backtrace,
     ),
-    /*#[error("Parser error: {0}")]
-    Parser(#[from] IResult<&'a str, SqlStatement>, std::backtrace::Backtrace),
-    */
 }
 
 type Result<T> = core::result::Result<T, MyError>;
 
-#[derive(Debug, Clone)]
-pub struct Database {
-    pub file_header: FileHeader,
-    pub pages: Vec<PageReader>,
-    pub table_schemas: HashMap<String, TableSchema>,
-}
-
-impl Database {
-    pub fn from(file: &mut File) -> Result<Self> {
-        let file_header = FileHeader::from(file)?;
-        let mut pages: Vec<PageReader> = Vec::new();
-        for i in 1..=file_header.page_count {
-            //println!("Start reading page {}", i);
-            let page = PageReader::from(file, i as u64, file_header.page_size as u64);
-            pages.push(page);
-            //println!("-------------------------------");
-        }
-
-        let first_page = &pages[0];
-        let mut table_schemas: HashMap<String, TableSchema> = HashMap::new();
-        for n in 0..first_page.row_reader.pointers.len() {
-            let table_name = first_page.row_reader.read(n as u32)[1].to_string();
-            let table_sql = first_page.row_reader.read(n as u32)[4].to_string();
-            table_schemas.insert(table_name, TableSchema::from(&table_sql));
-        }
-
-        Ok(Self {
-            file_header,
-            pages,
-            table_schemas,
-        })
-    }
-
-    pub fn get_page_size(&self) -> u16 {
-        self.file_header.page_size
-    }
-
-    pub fn get_page_count(&self) -> u32 {
-        self.file_header.page_count
-    }
-
-    /*
-        Every SQLite database contains a single "schema table" that stores the schema for that database.
-        The schema for a database is a description of all of the other tables, indexes, triggers, and
-        views that are contained within the database. The schema table looks like this:
-
-            CREATE TABLE sqlite_schema(
-            type text,
-            name text,
-            tbl_name text,
-            rootpage integer,
-            sql text
-            );
-
-        we can parse this table to get all the table name and schema. This table is in the first page of
-        every Sqlite database file.
-    */
-
-    pub fn get_table_names(&self) -> Vec<String> {
-        let mut result: Vec<String> = Vec::new();
-        let first_page = &self.pages[0];
-        for n in 0..first_page.row_reader.pointers.len() {
-            result.push(first_page.row_reader.read(n as u32)[1].to_string());
-        }
-        result
-    }
-
-    pub fn count_rows(&self, table_name: &str) -> usize {
-        let root_num = self.get_table_location(table_name);
-        let page = &self.pages[root_num - 1];
-        return page.row_reader.cells.len();
-    }
-
-    pub fn get_column(&self, table_name: &str, column_name: &str) -> Vec<String> {
-        let mut result = Vec::new();
-        let table_schema = self.table_schemas.get(table_name).unwrap();
-        for i in 0..table_schema.cols.len() {
-            if table_schema.cols[i] == column_name {
-                let table_location = self.get_table_location(table_name);
-                let page = &self.pages[table_location - 1];
-                for n in 0..page.row_reader.cells.len() {
-                    let row = page.row_reader.read(n as u32);
-                    println!("the result is {:?}", row);
-                    match row[i] {
-                        SerialType::String(s) => result.push(s.clone()),
-                        _ => println!("the format is not correct"),
-                    }
-                }
-            }
-        }
-        result
-    }
-
-    fn get_table_location(&self, table_name: &str) -> usize {
-        let first_page = &self.pages[0];
-        // How to return the value directly in the for loop here?
-        for n in 0..first_page.row_reader.pointers.len() {
-            let name = first_page.row_reader.read(n as u32)[1].to_string();
-            if name == table_name {
-                //let table_location: i64 = self.pages[0].row_reader.read(n as u32)[3].try_into().unwrap();
-                //println!("value: {}", table_location);
-                match first_page.row_reader.read(n as u32)[3] {
-                    SerialType::Integer(i) => {
-                        println!("The location for table {} is {}", table_name, i);
-                        return *i as usize;
-                    }
-                    _ => {
-                        println!("Somthing is wrong!");
-                    }
-                }
-            }
-        }
-        0
-    }
-}
-
 /*
+   File header only exists in the first page.
    File Header Format
        Offset	Size	Description
        0	    16	    The header string: "SQLite format 3\000"
@@ -189,17 +67,23 @@ pub struct FileHeader {
     pub page_count: u32,
 }
 
-impl FileHeader {
-    const FILE_HEADER_SIZE: usize = 100;
+/* And there are 4 types of page, the type of the page is included at the begining of page header:
+    A value of 2 (0x02) means the page is an interior index b-tree page.
+    A value of 5 (0x05) means the page is an interior table b-tree page.
+    A value of 10 (0x0a) means the page is a leaf index b-tree page.
+    A value of 13 (0x0d) means the page is a leaf table b-tree page.
+*/
+#[derive(Debug)]
+pub enum Page {
+    TableLeaf(TableLeafPage),
+}
 
-    pub fn from(file: &mut File) -> Result<Self> {
-        let mut header = [0; Self::FILE_HEADER_SIZE];
-        file.read_exact(&mut header)?;
-        Ok(Self {
-            page_size: u16::from_be_bytes([header[16], header[17]]),
-            page_count: u32::from_be_bytes([header[28], header[29], header[30], header[31]]),
-        })
-    }
+#[derive(Debug, Copy, Clone)]
+pub enum PageType {
+    TableLeaf,
+    IndexLeaf,
+    TableInterior,
+    IndexInterior,
 }
 
 /*
@@ -211,19 +95,81 @@ impl FileHeader {
         * The cell content area
         * The reserved region
 */
-
 #[derive(Debug, Clone)]
-pub struct PageReader {
+pub struct TableLeafPage {
     pub page_header: PageHeader,
     pub row_reader: RowReader,
     pub page_num: u64,
 }
 
-impl PageReader {
-    pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Self {
+/*
+    Page Header Layout
+    Offset	Size	Description
+        0	1	The one-byte flag at offset 0 indicating the b-tree page type.
+        1	2	2-byte integer representing the offset of the first free block in the page, or zero if there is no freeblock.
+        3	2	2-byte integer representing the number of cells in the page.
+        5	2	2-byte integer representing the offset of the first cell.
+        7	1	The one-byte integer at offset 7 gives the number of fragmented free bytes within the cell content area.
+        8	4	The four-byte page number at offset 8 is the right-most pointer. This value appears in the header of interior b-tree pages only and is omitted from all other pages.
+*/
+#[derive(Debug, Clone)]
+pub struct PageHeader {
+    pub page_type: PageType,
+    pub first_freeblock: u16,
+    pub cell_count: u16,
+    pub cell_content_offset: u32,
+    pub fragmented_bytes_count: u8,
+}
+
+#[derive(Debug, Clone)]
+struct RowReader {
+    pub pointers: Vec<u16>,
+    pub cells: Vec<Cell>,
+}
+
+/* Cell Format:
+ * The size of the record, in bytes (varint)
+ * The rowid (varint)
+ * The record (record format)
+ */
+#[derive(Debug, Clone)]
+struct Cell {
+    pub size_of_record: usize,
+    pub rowid: i64,
+    pub record: Record,
+}
+
+/*
+   Record Format
+     * Header:
+      - Size of the header, including this value (varint)
+      - Serial type code for each column in the record, in order (varint)
+     * Body:
+      - The value of each column in the record, in order (format varies based on serial type code)
+*/
+#[derive(Debug, Clone)]
+struct Record {
+    pub columns: Vec<SerialType>,
+}
+
+impl FileHeader {
+    pub const FILE_HEADER_SIZE: usize = 100;
+
+    pub fn from(file: &mut File) -> Result<Self> {
+        let mut header = [0; Self::FILE_HEADER_SIZE];
+        file.read_exact(&mut header)?;
+        Ok(Self {
+            page_size: u16::from_be_bytes([header[16], header[17]]),
+            page_count: u32::from_be_bytes([header[28], header[29], header[30], header[31]]),
+        })
+    }
+}
+
+impl TableLeafPage {
+    pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
         Self {
-            page_header: PageHeader::from(file, page_num, page_size).unwrap(),
-            row_reader: RowReader::from(file, page_num, page_size).unwrap(),
+            page_header: PageHeader::from(buffer, page_num, page_size).unwrap(),
+            row_reader: RowReader::from(buffer, page_num, page_size).unwrap(),
             page_num,
         }
     }
@@ -233,46 +179,14 @@ impl PageReader {
     }
 }
 
-/*
-    Page Header Layout
-        Offset	Size	Description
-        0	1	The one-byte flag at offset 0 indicating the b-tree page type.
-                A value of 2 (0x02) means the page is an interior index b-tree page.
-                A value of 5 (0x05) means the page is an interior table b-tree page.
-                A value of 10 (0x0a) means the page is a leaf index b-tree page.
-                A value of 13 (0x0d) means the page is a leaf table b-tree page.
-                Any other value for the b-tree page type is an error.
-        1	2	The two-byte integer at offset 1 gives the start of the first freeblock on the page, or is zero if there are no freeblocks.
-        3	2	The two-byte integer at offset 3 gives the number of cells on the page.
-        5	2	The two-byte integer at offset 5 designates the start of the cell content area. A zero value for this integer is interpreted as 65536.
-        7	1	The one-byte integer at offset 7 gives the number of fragmented free bytes within the cell content area.
-        8	4	The four-byte page number at offset 8 is the right-most pointer. This value appears in the header of interior b-tree pages only and is omitted from all other pages.
-*/
-
-#[derive(Debug, Clone)]
-pub struct PageHeader {
-    pub cell_count: u16,
-}
-
 impl PageHeader {
     const MAX_PAGE_HEADER_SIZE: usize = 8;
 
-    pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
-        let mut buffer = [0; 2];
-        let offset = get_page_start_offset(page_num, page_size);
-        //println!("Reading Page header from offset {}", offset);
-        file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(&mut buffer)?;
+    pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Result<Self> {
         Ok(Self {
             cell_count: u16::from_be_bytes([buffer[0], buffer[1]]),
         })
     }
-}
-
-#[derive(Debug, Clone)]
-struct RowReader {
-    pub pointers: Vec<u16>,
-    pub cells: Vec<Cell>,
 }
 
 impl RowReader {
@@ -328,19 +242,6 @@ impl RowReader {
     }
 }
 
-/* Cell Format:
- * The size of the record, in bytes (varint)
- * The rowid (varint)
- * The record (record format)
- */
-
-#[derive(Debug, Clone)]
-struct Cell {
-    pub size_of_record: usize,
-    pub rowid: i64,
-    pub record: Record,
-}
-
 impl Cell {
     pub fn from(data: &[u8]) -> Result<Self> {
         use crate::utils::read_variant;
@@ -355,20 +256,6 @@ impl Cell {
             record,
         })
     }
-}
-
-/*
-   Record Format
-     * Header:
-      - Size of the header, including this value (varint)
-      - Serial type code for each column in the record, in order (varint)
-     * Body:
-      - The value of each column in the record, in order (format varies based on serial type code)
-*/
-
-#[derive(Debug, Clone)]
-struct Record {
-    pub columns: Vec<SerialType>,
 }
 
 impl Record {
@@ -513,28 +400,6 @@ convert!(String, String);
         }
     }
 }*/
-
-#[derive(Debug, Clone)]
-struct TableSchema {
-    pub table_name: String,
-    pub cols: Vec<String>,
-}
-
-impl TableSchema {
-    pub fn from(sql: &String) -> Self {
-        let (_, sql_cmd) = sql_query(sql).unwrap();
-        let mut table_name: String = String::new();
-        let mut cols: Vec<String> = Vec::new();
-        match sql_cmd {
-            SqlStatement::CREATE(cs) => {
-                table_name = cs.table_name;
-                cols = cs.cols;
-            }
-            _ => println!("Something is wrong, the schema is not a creation sql."),
-        }
-        Self { table_name, cols }
-    }
-}
 
 fn get_page_start_offset(page_num: u64, page_size: u64) -> u64 {
     let start = (page_num - 1) * page_size;
