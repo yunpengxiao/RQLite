@@ -1,4 +1,4 @@
-use crate::parser::{sql_query, SqlStatement};
+use crate::parser::{SqlStatement, sql_query};
 
 #[derive(Debug, Clone)]
 pub struct TableSchema {

@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use thiserror::Error;
 
-use crate::utils;
 use crate::cell::Cell;
+use crate::utils;
 
 // You need to set RUST_LIB_BACKTRACE=1 to enable backtrace here.
 // Running the code like "RUST_LIB_BACKTRACE=1 cargo run -- sample.db tables"

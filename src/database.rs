@@ -1,7 +1,7 @@
 use core::panic;
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::SeekFrom;
+use std::io::prelude::*;
 
 use crate::page::TableLeafPage;
 use crate::page::{FileHeader, Page};
@@ -18,7 +18,8 @@ impl Database {
         let file_header = FileHeader::from(file).unwrap();
         let mut pages: Vec<Page> = Vec::new();
         for i in 0..file_header.page_count {
-            let buffer: &Vec<u8> = &Self::load_raw_page(file, i as u64, file_header.page_size as u64);
+            let buffer: &Vec<u8> =
+                &Self::load_raw_page(file, i as u64, file_header.page_size as u64);
             let page = match get_page_type(buffer[0]) {
                 crate::page::PageType::TableLeaf => Page::TableLeaf(TableLeafPage::from(
                     buffer,
@@ -38,10 +39,7 @@ impl Database {
             table_schemas.insert(table_name, TableSchema::from(&table_sql));
         }*/
 
-        Self {
-            file_header,
-            pages,
-        }
+        Self { file_header, pages }
     }
 
     pub fn get_page_size(&self) -> u16 {
@@ -64,7 +62,10 @@ impl Database {
         } else {
             page_num * page_size
         };
-        println!("Reading from offset {} with {} bytes.", offset, raw_page_size);
+        println!(
+            "Reading from offset {} with {} bytes.",
+            offset, raw_page_size
+        );
         file.seek(SeekFrom::Start(offset)).unwrap();
         file.read_exact(&mut buffer).unwrap(); // buffer is coverted to &[u8] because vec implements AsRef<T>
         buffer
@@ -125,8 +126,6 @@ impl Database {
         }
         result
     }*/
-
-
 
     /*fn get_table_location(&self, table_name: &str) -> usize {
         let first_page = &self.pages[0];

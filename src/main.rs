@@ -3,6 +3,7 @@ mod database;
 mod executor;
 mod page;
 mod parser;
+mod record;
 mod serial_type;
 mod table;
 mod utils;
