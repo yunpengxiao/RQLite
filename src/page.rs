@@ -4,6 +4,7 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use thiserror::Error;
 
+use crate::utils;
 use crate::utils::read_variant;
 use crate::utils::MyCoolArrayStuff;
 
@@ -123,7 +124,6 @@ pub struct PageHeader {
 
 #[derive(Debug, Clone)]
 struct RowReader {
-    pub pointers: Vec<u16>,
     pub cells: Vec<Cell>,
 }
 
@@ -167,9 +167,10 @@ impl FileHeader {
 
 impl TableLeafPage {
     pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
+        let page_header = PageHeader::from(buffer, page_num).unwrap();
         Self {
-            page_header: PageHeader::from(buffer, page_num, page_size).unwrap(),
-            row_reader: RowReader::from(buffer, page_num, page_size).unwrap(),
+            row_reader: RowReader::from(buffer, page_num, page_header.cell_count).unwrap(),
+            page_header,
             page_num,
         }
     }
@@ -182,9 +183,20 @@ impl TableLeafPage {
 impl PageHeader {
     const MAX_PAGE_HEADER_SIZE: usize = 8;
 
-    pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Result<Self> {
+    pub fn from(buffer: &[u8], page_num: u64) -> Result<Self> {
+        // This offset is the offset since the beginning of page not the buffer.
+        let cell_content_offset = if page_num == 0 {
+            u32::from_be_bytes([buffer[5], buffer[6], buffer[7], buffer[8]])
+                - FileHeader::FILE_HEADER_SIZE as u32
+        } else {
+            u32::from_be_bytes([buffer[5], buffer[6], buffer[7], buffer[8]])
+        };
         Ok(Self {
-            cell_count: u16::from_be_bytes([buffer[0], buffer[1]]),
+            page_type: utils::get_page_type(buffer[0]),
+            first_freeblock: u16::from_be_bytes([buffer[1], buffer[2]]),
+            cell_count: u16::from_be_bytes([buffer[3], buffer[4]]),
+            cell_content_offset,
+            fragmented_bytes_count: buffer[9],
         })
     }
 }
@@ -192,53 +204,26 @@ impl PageHeader {
 impl RowReader {
     const BUFFER_SIZE: usize = 4096;
 
-    pub fn from(file: &mut File, page_num: u64, page_size: u64) -> Result<Self> {
-        let cell_count = Self::get_cell_count(file, page_num, page_size).unwrap();
-        //println!("Page {} We have {} cells", page_num, cell_count);
-        let mut buffer = vec![0; (cell_count as usize) * 2];
-        let mut cell_pointers = Vec::new();
-        let page_offset =
-            get_page_start_offset(page_num, page_size) + PageHeader::MAX_PAGE_HEADER_SIZE as u64;
+    pub fn from(buffer: &[u8], page_num: u64, cell_count: u16) -> Result<Self> {
+        let cell_pointers = &buffer[PageHeader::MAX_PAGE_HEADER_SIZE
+            ..PageHeader::MAX_PAGE_HEADER_SIZE + (cell_count as usize) * 2];
+        let mut cells: Vec<Cell> = Vec::new();
         // Page header size can be 12 bytes too, just use 8 here for simplicity
         //println!("Reading cell pointers from offset {} with bytes {}", page_offset,  (cell_count as usize) * 2);
-        file.seek(SeekFrom::Start(page_offset))?;
-        file.read_exact(&mut buffer[..])?;
-        for arr in buffer.as_slice().as_array_iter() {
-            let offset = u16::from_be_bytes(*arr);
-            cell_pointers.push(offset);
+        for arr in cell_pointers.chunks_exact(2) {
+            let offset = if page_num == 0 {
+                u16::from_be_bytes(arr.try_into().unwrap()) - FileHeader::FILE_HEADER_SIZE as u16
+            } else {
+                u16::from_be_bytes(arr.try_into().unwrap())
+            };
+            cells.push(Cell::from(&buffer[offset as usize..]).unwrap());
         }
 
-        let mut cells: Vec<Cell> = Vec::new();
-        for cell_location in &cell_pointers {
-            let mut buffer = [0; Self::BUFFER_SIZE];
-            let offset = (page_num - 1) * page_size + (*cell_location) as u64;
-            /*println!(
-                "Reading cells from offset {} with size {}.",
-                offset,
-                Self::BUFFER_SIZE
-            );*/
-            file.seek(SeekFrom::Start(offset))?;
-            let _ = file.read_exact(&mut buffer);
-            cells.push(Cell::from(&buffer)?);
-        }
-
-        Ok(Self {
-            pointers: cell_pointers,
-            cells,
-        })
+        Ok(Self { cells })
     }
 
     pub fn read(&self, row_num: u32) -> Vec<&SerialType> {
         self.cells[row_num as usize].record.columns.iter().collect()
-    }
-
-    fn get_cell_count(file: &mut File, page_num: u64, page_size: u64) -> Result<u16> {
-        let mut buffer = [0; 2];
-        let offset = get_page_start_offset(page_num, page_size) + 3;
-        //println!("Getting cell count from {} with size 2.", offset);
-        file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(&mut buffer)?;
-        Ok(u16::from_be_bytes([buffer[0], buffer[1]]))
     }
 }
 

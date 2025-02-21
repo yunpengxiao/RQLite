@@ -1,4 +1,5 @@
-use crate::{page::Database, parser::SqlStatement};
+use crate::database::Database;
+use crate::parser::SqlStatement;
 
 pub struct Executor {
     //pub head_page_reader: PageReader,
@@ -7,9 +8,7 @@ pub struct Executor {
 
 impl Executor {
     pub fn from(database: Database) -> Self {
-        Self {
-            database,
-        }
+        Self { database }
     }
 
     pub fn execute(&self, sql_statement: SqlStatement) {
@@ -23,8 +22,11 @@ impl Executor {
                     println!("{}", self.database.count_rows(table_name.as_str()));
                 } else {
                     for col in fields {
-                        println!("{}: {:?}", 
-                            col, self.database.get_column(table_name.as_str(), col.as_str()));
+                        println!(
+                            "{}: {:?}",
+                            col,
+                            self.database.get_column(table_name.as_str(), col.as_str())
+                        );
                     }
                 }
             }

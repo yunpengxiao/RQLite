@@ -48,7 +48,7 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut file = File::open(&cli.path)?;
-    let database = Database::from(&mut file)?;
+    let database = Database::from(&mut file);
     //println!("{:?}", database);
 
     match cli.command {
