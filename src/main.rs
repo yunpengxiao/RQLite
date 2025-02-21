@@ -1,10 +1,9 @@
-#![feature(backtrace_frames)]
-#![feature(error_generic_member_access)]
-
+mod cell;
 mod database;
 mod executor;
 mod page;
 mod parser;
+mod serial_type;
 mod table;
 mod utils;
 
@@ -24,7 +23,7 @@ use clap::{Parser, Subcommand};
 #[command(version, about, long_about = None)]
 struct Cli {
     /// database path
-    path: String,
+    path: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -47,9 +46,12 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut file = File::open(&cli.path)?;
+    let db_path = match cli.path {
+        Some(path) => path,
+        None => String::from("./sample.db"),
+    };
+    let mut file = File::open(db_path)?;
     let database = Database::from(&mut file);
-    //println!("{:?}", database);
 
     match cli.command {
         Commands::DbInfo => {
@@ -57,10 +59,11 @@ fn main() -> Result<()> {
             println!("database page count: {}", database.get_page_count());
         }
         Commands::Tables => {
-            let table_names = database.get_table_names();
+            panic!("nothing yet");
+            /*let table_names = database.get_table_names();
             for name in table_names {
                 println!("{name}");
-            }
+            }*/
         }
         Commands::Run { statement } => {
             if let Some(stem) = statement {

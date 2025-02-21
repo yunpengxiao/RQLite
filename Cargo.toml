@@ -2,8 +2,7 @@
 name = "codecrafters-sqlite"
 version = "0.1.0"
 authors = []
-edition = "2021"
-rust-version = "1.80"
+edition = "2024"
 
 [dependencies]
 anyhow = "*"

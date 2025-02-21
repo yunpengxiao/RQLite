@@ -1,37 +1,28 @@
-use std::fmt::Display;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::SeekFrom;
 use thiserror::Error;
 
 use crate::utils;
-use crate::utils::read_variant;
-use crate::utils::MyCoolArrayStuff;
+use crate::cell::Cell;
 
 // You need to set RUST_LIB_BACKTRACE=1 to enable backtrace here.
 // Running the code like "RUST_LIB_BACKTRACE=1 cargo run -- sample.db tables"
 #[derive(Debug, Error)]
 pub enum MyError {
     #[error("Io Error: {0}")]
-    Io(#[from] std::io::Error, std::backtrace::Backtrace),
+    Io(#[from] std::io::Error),
 
-    #[error("Offset Error: {0}, at {1}")]
-    Offset(#[from] std::num::TryFromIntError, std::backtrace::Backtrace),
+    #[error("Offset Error: {0}")]
+    Offset(#[from] std::num::TryFromIntError),
 
     #[error("utf8 error: {0}")]
-    Utf8(
-        #[from] std::string::FromUtf8Error,
-        std::backtrace::Backtrace,
-    ),
+    Utf8(#[from] std::string::FromUtf8Error),
 
     #[error("Slice error: {0}")]
-    Slice(
-        #[from] std::array::TryFromSliceError,
-        std::backtrace::Backtrace,
-    ),
+    Slice(#[from] std::array::TryFromSliceError),
 }
 
-type Result<T> = core::result::Result<T, MyError>;
+pub type Result<T> = core::result::Result<T, MyError>;
 
 /*
    File header only exists in the first page.
@@ -99,8 +90,8 @@ pub enum PageType {
 #[derive(Debug, Clone)]
 pub struct TableLeafPage {
     pub page_header: PageHeader,
-    pub row_reader: RowReader,
     pub page_num: u64,
+    pub cells: Vec<Cell>,
 }
 
 /*
@@ -122,36 +113,6 @@ pub struct PageHeader {
     pub fragmented_bytes_count: u8,
 }
 
-#[derive(Debug, Clone)]
-struct RowReader {
-    pub cells: Vec<Cell>,
-}
-
-/* Cell Format:
- * The size of the record, in bytes (varint)
- * The rowid (varint)
- * The record (record format)
- */
-#[derive(Debug, Clone)]
-struct Cell {
-    pub size_of_record: usize,
-    pub rowid: i64,
-    pub record: Record,
-}
-
-/*
-   Record Format
-     * Header:
-      - Size of the header, including this value (varint)
-      - Serial type code for each column in the record, in order (varint)
-     * Body:
-      - The value of each column in the record, in order (format varies based on serial type code)
-*/
-#[derive(Debug, Clone)]
-struct Record {
-    pub columns: Vec<SerialType>,
-}
-
 impl FileHeader {
     pub const FILE_HEADER_SIZE: usize = 100;
 
@@ -169,9 +130,9 @@ impl TableLeafPage {
     pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
         let page_header = PageHeader::from(buffer, page_num).unwrap();
         Self {
-            row_reader: RowReader::from(buffer, page_num, page_header.cell_count).unwrap(),
             page_header,
             page_num,
+            cells: Vec::new(),
         }
     }
 
@@ -201,7 +162,7 @@ impl PageHeader {
     }
 }
 
-impl RowReader {
+/*impl RowReader {
     const BUFFER_SIZE: usize = 4096;
 
     pub fn from(buffer: &[u8], page_num: u64, cell_count: u16) -> Result<Self> {
@@ -225,172 +186,4 @@ impl RowReader {
     pub fn read(&self, row_num: u32) -> Vec<&SerialType> {
         self.cells[row_num as usize].record.columns.iter().collect()
     }
-}
-
-impl Cell {
-    pub fn from(data: &[u8]) -> Result<Self> {
-        use crate::utils::read_variant;
-
-        let (size_of_record, bytes_read1) = read_variant(data);
-        let (rowid, bytes_read2) = read_variant(&data[bytes_read1..]);
-        let record = Record::from(&data[bytes_read1 + bytes_read2..])?;
-
-        Ok(Self {
-            size_of_record: size_of_record.try_into()?,
-            rowid,
-            record,
-        })
-    }
-}
-
-impl Record {
-    pub fn from(data: &[u8]) -> Result<Self> {
-        let (record_head_size, first_type_offset) = read_variant(&data[..]);
-        let mut column_pointer = record_head_size;
-        let mut serial_type_pointer: usize = first_type_offset;
-        let mut columns: Vec<SerialType> = Vec::new();
-        while serial_type_pointer != record_head_size as usize {
-            let (serial_type, bytes_read) = read_variant(&data[serial_type_pointer..]);
-            let size_of_column: i64;
-            let st: SerialType;
-            if serial_type >= 12 && serial_type % 2 == 0 {
-                size_of_column = (serial_type - 12) / 2;
-                st = SerialType::Blob(
-                    data[(column_pointer as usize)
-                        ..(column_pointer as usize) + (size_of_column as usize)]
-                        .to_vec(),
-                );
-            } else if serial_type >= 13 && serial_type % 2 != 0 {
-                size_of_column = (serial_type - 13) / 2;
-                st = SerialType::String(String::from_utf8(
-                    data[(column_pointer as usize)
-                        ..(column_pointer as usize) + (size_of_column as usize)]
-                        .to_vec(),
-                )?);
-            } else if serial_type >= 1 && serial_type <= 4 {
-                size_of_column = serial_type;
-                let cp = column_pointer as usize;
-                let cp_end = cp + size_of_column as usize;
-                st = match serial_type {
-                    1 => {
-                        SerialType::Integer(i8::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    2 => {
-                        SerialType::Integer(i16::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    4 => {
-                        SerialType::Integer(i32::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    8 => {
-                        SerialType::Integer(i64::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    _ => unreachable!(),
-                };
-            } else {
-                size_of_column = 0;
-                st = SerialType::NULL;
-            };
-            //println!("Read col {:?} with size {}", st, size_of_column);
-
-            columns.push(st);
-            serial_type_pointer += bytes_read;
-            column_pointer += size_of_column;
-        }
-
-        Ok(Self { columns })
-    }
-
-    pub fn get_column(&self, index: usize) -> &SerialType {
-        &self.columns[index]
-    }
-}
-
-/*
-    Type            Size	    Meaning
-    0	            0	        Value is a NULL.
-    1	            1	        Value is an 8-bit twos-complement integer.
-    2	            2	        Value is a big-endian 16-bit twos-complement integer.
-    3	            3	        Value is a big-endian 24-bit twos-complement integer.
-    4	            4	        Value is a big-endian 32-bit twos-complement integer.
-    5	            6	        Value is a big-endian 48-bit twos-complement integer.
-    6	            8	        Value is a big-endian 64-bit twos-complement integer.
-    7	            8	        Value is a big-endian IEEE 754-2008 64-bit floating point number.
-    8	            0	        Value is the integer 0. (Only available for schema format 4 and higher.)
-    9	            0	        Value is the integer 1. (Only available for schema format 4 and higher.)
-    10,11           variable	Reserved for internal use. These serial type codes will never appear in a well-formed database file, but they might be used in transient and temporary database files that SQLite sometimes generates for its own use. The meanings of these codes can shift from one release of SQLite to the next.
-    N≥12 and even	(N-12)/2	Value is a BLOB that is (N-12)/2 bytes in length.
-    N≥13 and odd	(N-13)/2	Value is a string in the text encoding and (N-13)/2 bytes in length. The nul terminator is not stored.
-*/
-#[derive(Debug, Clone)]
-enum SerialType {
-    String(String),
-    Blob(Vec<u8>),
-    NULL,
-    Integer(i64),
-    //Float,
-}
-
-impl Display for SerialType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            SerialType::String(s) => write!(f, "{s}"),
-            SerialType::Blob(b) => write!(f, "{b:?}"),
-            SerialType::Integer(i) => write!(f, "{i:?}"),
-            SerialType::NULL => write!(f, "NULL"),
-        }
-    }
-}
-
-// TryFrom definetion macro
-macro_rules! convert {
-    ($t:ty, $x:ident) => {
-        #[automatically_derived]
-        impl TryFrom<&SerialType> for $t {
-            type Error = &'static str;
-
-            fn try_from(st: &SerialType) -> std::result::Result<Self, Self::Error> {
-                if let SerialType::$x(i) = st {
-                    Ok(i.clone())
-                } else {
-                    Err("wrong")
-                }
-            }
-        }
-    };
-}
-
-convert!(i64, Integer);
-convert!(Vec<u8>, Blob);
-convert!(String, String);
-
-// impl TryFrom<&SerialType> for i64 {
-//     type Error = &'static str;
-
-//     fn try_from(st: &SerialType) -> std::result::Result<Self, Self::Error> {
-//         if let SerialType::Integer(i) = st {
-//             Ok(*i)
-//         } else {
-//             Err("wrong")
-//         }
-//     }
-// }
-
-/*impl TryInto<i64> for &SerialType {
-    type Error = &'static str;
-
-    fn try_into(self) -> std::result::Result<i64, Self::Error>  {
-        match self {
-            SerialType::Integer(i) => Ok(i),
-            _ => Err("Not the integer type"),
-        }
-    }
 }*/
-
-fn get_page_start_offset(page_num: u64, page_size: u64) -> u64 {
-    let start = (page_num - 1) * page_size;
-    if page_num == 1 {
-        start + FileHeader::FILE_HEADER_SIZE as u64
-    } else {
-        start
-    }
-}

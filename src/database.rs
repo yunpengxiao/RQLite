@@ -1,19 +1,16 @@
 use core::panic;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 
 use crate::page::TableLeafPage;
 use crate::page::{FileHeader, Page};
-use crate::table::TableSchema;
 use crate::utils::get_page_type;
 
 #[derive(Debug)]
 pub struct Database {
     pub file_header: FileHeader,
     pub pages: Vec<Page>,
-    //pub table_schemas: HashMap<String, TableSchema>,
 }
 
 impl Database {
@@ -21,7 +18,7 @@ impl Database {
         let file_header = FileHeader::from(file).unwrap();
         let mut pages: Vec<Page> = Vec::new();
         for i in 0..file_header.page_count {
-            let buffer = &Self::load_raw_page(file, i as u64, file_header.page_size as u64);
+            let buffer: &Vec<u8> = &Self::load_raw_page(file, i as u64, file_header.page_size as u64);
             let page = match get_page_type(buffer[0]) {
                 crate::page::PageType::TableLeaf => Page::TableLeaf(TableLeafPage::from(
                     buffer,
@@ -44,7 +41,6 @@ impl Database {
         Self {
             file_header,
             pages,
-            //table_schemas,
         }
     }
 
@@ -54,6 +50,24 @@ impl Database {
 
     pub fn get_page_count(&self) -> u32 {
         self.file_header.page_count
+    }
+
+    fn load_raw_page(file: &mut File, page_num: u64, page_size: u64) -> Vec<u8> {
+        let raw_page_size = if page_num == 0 {
+            page_size - FileHeader::FILE_HEADER_SIZE as u64
+        } else {
+            page_size
+        };
+        let mut buffer = vec![0; raw_page_size as usize];
+        let offset = if page_num == 0 {
+            FileHeader::FILE_HEADER_SIZE as u64
+        } else {
+            page_num * page_size
+        };
+        println!("Reading from offset {} with {} bytes.", offset, raw_page_size);
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        file.read_exact(&mut buffer).unwrap(); // buffer is coverted to &[u8] because vec implements AsRef<T>
+        buffer
     }
 
     /*
@@ -73,7 +87,7 @@ impl Database {
         every Sqlite database file.
     */
 
-    pub fn get_table_names(&self) -> Vec<String> {
+    /*pub fn get_table_names(&self) -> Vec<String> {
         let mut result: Vec<String> = Vec::new();
         match &self.pages[0] {
             Page::TableLeaf(first_page) => {
@@ -84,7 +98,7 @@ impl Database {
             }
             _ => panic!("Something wronge"),
         }
-    }
+    }*/
 
     /*pub fn count_rows(&self, table_name: &str) -> usize {
         let root_num = self.get_table_location(table_name);
@@ -112,22 +126,7 @@ impl Database {
         result
     }*/
 
-    fn load_raw_page(file: &mut File, page_num: u64, page_size: u64) -> Vec<u8> {
-        let raw_page_size = if page_num == 0 {
-            page_size - FileHeader::FILE_HEADER_SIZE as u64
-        } else {
-            page_size
-        };
-        let mut buffer = Vec::<u8>::with_capacity(raw_page_size as usize);
-        let offset = if page_num == 0 {
-            FileHeader::FILE_HEADER_SIZE as u64
-        } else {
-            page_num * page_size
-        };
-        file.seek(SeekFrom::Start(offset));
-        file.read_exact(&mut buffer).unwrap(); // buffer is coverted to &[u8] because vec implements AsRef<T>
-        buffer
-    }
+
 
     /*fn get_table_location(&self, table_name: &str) -> usize {
         let first_page = &self.pages[0];
