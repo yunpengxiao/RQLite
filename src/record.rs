@@ -13,67 +13,77 @@ use crate::utils::read_variant;
 */
 #[derive(Debug, Clone)]
 pub struct Record {
-    pub columns: Vec<SerialType>,
+    pub columns: Vec<Column>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Column {
+    pub offset: usize,
+    pub serial_type: SerialType,
 }
 
 impl Record {
     pub fn from(data: &[u8]) -> Result<Self> {
+        let mut columns = Vec::new();
         let (record_head_size, first_type_offset) = read_variant(&data[..]);
         let mut column_pointer = record_head_size;
         let mut serial_type_pointer: usize = first_type_offset;
-        let mut columns: Vec<SerialType> = Vec::new();
         while serial_type_pointer != record_head_size as usize {
             let (serial_type, bytes_read) = read_variant(&data[serial_type_pointer..]);
-            let size_of_column: i64;
+            let mut size_of_column = 0;
             let st: SerialType;
             if serial_type >= 12 && serial_type % 2 == 0 {
                 size_of_column = (serial_type - 12) / 2;
-                st = SerialType::Blob(
-                    data[(column_pointer as usize)
-                        ..(column_pointer as usize) + (size_of_column as usize)]
-                        .to_vec(),
-                );
+                st = SerialType::Blob;
             } else if serial_type >= 13 && serial_type % 2 != 0 {
                 size_of_column = (serial_type - 13) / 2;
-                st = SerialType::String(String::from_utf8(
-                    data[(column_pointer as usize)
-                        ..(column_pointer as usize) + (size_of_column as usize)]
-                        .to_vec(),
-                )?);
-            } else if serial_type >= 1 && serial_type <= 4 {
-                size_of_column = serial_type;
-                let cp = column_pointer as usize;
-                let cp_end = cp + size_of_column as usize;
-                st = match serial_type {
-                    1 => {
-                        SerialType::Integer(i8::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    2 => {
-                        SerialType::Integer(i16::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    4 => {
-                        SerialType::Integer(i32::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    8 => {
-                        SerialType::Integer(i64::from_be_bytes(data[cp..cp_end].try_into()?).into())
-                    }
-                    _ => unreachable!(),
-                };
+                st = SerialType::String;
             } else {
-                size_of_column = 0;
-                st = SerialType::NULL;
+                st = match serial_type {
+                    0 => SerialType::Null,
+                    1 => {
+                        size_of_column = 1;
+                        SerialType::I8 
+                    },
+                    2 => {
+                        size_of_column = 2;
+                        SerialType::I16
+                    },
+                    3 => {
+                        size_of_column = 3;
+                        SerialType::I24
+                    },
+                    4 => {
+                        size_of_column = 4;
+                        SerialType::I32
+                    },
+                    5 => {
+                        size_of_column = 6;
+                        SerialType::I48
+                    },
+                    6 => {
+                        size_of_column = 8;
+                        SerialType::I64
+                    },
+                    7 => {
+                        size_of_column = 8;
+                        SerialType::Float
+                    },
+                    8 => SerialType::Zero,
+                    9 => SerialType::One,
+                    _ => panic!("invalid serial type {}", serial_type),
+                };
+            }
+            let col = Column {
+                offset: column_pointer as usize,
+                serial_type: st,
             };
-            //println!("Read col {:?} with size {}", st, size_of_column);
 
-            columns.push(st);
+            columns.push(col);
             serial_type_pointer += bytes_read;
             column_pointer += size_of_column;
         }
 
         Ok(Self { columns })
-    }
-
-    pub fn get_column(&self, index: usize) -> &SerialType {
-        &self.columns[index]
     }
 }

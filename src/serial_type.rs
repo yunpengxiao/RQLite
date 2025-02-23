@@ -18,14 +18,21 @@ use std::fmt::Display;
 */
 #[derive(Debug, Clone)]
 pub enum SerialType {
-    String(String),
-    Blob(Vec<u8>),
-    NULL,
-    Integer(i64),
-    //Float,
+    Null,
+    I8,
+    I16,
+    I24,
+    I32,
+    I48,
+    I64,
+    Float,
+    Zero,
+    One,
+    String,
+    Blob,
 }
 
-impl Display for SerialType {
+/*impl Display for SerialType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             SerialType::String(s) => write!(f, "{s}"),
@@ -52,11 +59,11 @@ macro_rules! convert {
             }
         }
     };
-}
+}*/
 
-convert!(i64, Integer);
-convert!(Vec<u8>, Blob);
-convert!(String, String);
+//convert!(i64, Integer);
+//convert!(Vec<u8>, Blob);
+//convert!(String, String);
 
 // impl TryFrom<&SerialType> for i64 {
 //     type Error = &'static str;
