@@ -129,6 +129,7 @@ impl FileHeader {
 impl TableLeafPage {
     pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
         let page_header = PageHeader::from(buffer, page_num).unwrap();
+        let cells = Self::get_cells_from(buffer, page_num);
         Self {
             page_header,
             page_num,
@@ -139,6 +140,8 @@ impl TableLeafPage {
     pub fn table_count(&self) -> u16 {
         self.page_header.cell_count
     }
+
+    fn get_cells_from(buffer: &[u8], page_num: u64) {}
 }
 
 impl PageHeader {

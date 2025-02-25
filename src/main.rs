@@ -13,7 +13,6 @@ use database::Database;
 use executor::Executor;
 use parser::sql_query;
 use std::{
-    fs::File,
     io::{BufRead, BufReader, Write},
     net::TcpListener,
 };
@@ -51,8 +50,7 @@ fn main() -> Result<()> {
         Some(path) => path,
         None => String::from("./sample.db"),
     };
-    let mut file = File::open(db_path)?;
-    let database = Database::from(&mut file);
+    let database = Database::from(db_path);
 
     match cli.command {
         Commands::DbInfo => {
@@ -61,10 +59,10 @@ fn main() -> Result<()> {
         }
         Commands::Tables => {
             panic!("nothing yet");
-            /*let table_names = database.get_table_names();
+            let table_names = database.get_table_names();
             for name in table_names {
                 println!("{name}");
-            }*/
+            }
         }
         Commands::Run { statement } => {
             if let Some(stem) = statement {

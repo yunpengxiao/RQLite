@@ -43,32 +43,32 @@ impl Record {
                     0 => SerialType::Null,
                     1 => {
                         size_of_column = 1;
-                        SerialType::I8 
-                    },
+                        SerialType::I8
+                    }
                     2 => {
                         size_of_column = 2;
                         SerialType::I16
-                    },
+                    }
                     3 => {
                         size_of_column = 3;
                         SerialType::I24
-                    },
+                    }
                     4 => {
                         size_of_column = 4;
                         SerialType::I32
-                    },
+                    }
                     5 => {
                         size_of_column = 6;
                         SerialType::I48
-                    },
+                    }
                     6 => {
                         size_of_column = 8;
                         SerialType::I64
-                    },
+                    }
                     7 => {
                         size_of_column = 8;
                         SerialType::Float
-                    },
+                    }
                     8 => SerialType::Zero,
                     9 => SerialType::One,
                     _ => panic!("invalid serial type {}", serial_type),
@@ -85,5 +85,11 @@ impl Record {
         }
 
         Ok(Self { columns })
+    }
+}
+
+impl Column {
+    pub fn value(&self) -> String {
+        String::new()
     }
 }
