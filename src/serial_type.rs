@@ -19,17 +19,17 @@ use std::fmt::Display;
 #[derive(Debug, Clone)]
 pub enum SerialType {
     Null,
-    I8,
-    I16,
-    I24,
-    I32,
-    I48,
-    I64,
-    Float,
+    I8(i8),
+    I16(i16),
+    I24(i32),
+    I32(i32),
+    I48(i64),
+    I64(i64),
+    Float(f64),
     Zero,
     One,
-    String,
-    Blob,
+    String(String),
+    Blob(Box<[u8]>),
 }
 
 /*impl Display for SerialType {
