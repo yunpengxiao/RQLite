@@ -119,6 +119,20 @@ impl Record {
 
 impl Column {
     pub fn value(&self) -> String {
-        String::new()
+        match &self.serial_type {
+            SerialType::Null => String::from("NULL"),
+            SerialType::One => String::from("1"),
+            SerialType::Zero => String::from("0"),
+            SerialType::I8(v) => v.to_string(),
+            SerialType::I16(v) => v.to_string(),
+            SerialType::I24(v) => v.to_string(),
+            SerialType::I48(v) => v.to_string(),
+            SerialType::I32(v) => v.to_string(),
+            SerialType::I64(v) => v.to_string(),
+            SerialType::Float(v) => v.to_string(),
+            SerialType::String(v) => v.clone(),
+            SerialType::Blob(v) => String::from_utf8(v.clone().into_vec()).unwrap(),
+            //_ => panic!("Unspported type"),
+        }
     }
 }

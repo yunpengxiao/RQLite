@@ -13,6 +13,7 @@ use crate::utils::get_page_type;
 pub struct Database {
     pub file_header: FileHeader,
     pub db_file: File,
+    // This member actually need to be thread safe mutable
     pub pages: HashMap<usize, Page>,
 }
 
@@ -79,6 +80,9 @@ impl Database {
         let mut result: Vec<String> = Vec::new();
         let data = self.load_raw_page(1, self.get_page_size() as u64);
         let first_page = TableLeafPage::from(&data, 1, self.get_page_size() as u64);
+        self.pages
+            .entry(1)
+            .or_insert(Page::TableLeaf(first_page.clone()));
         for cell in first_page.cells {
             result.push(cell.record.columns[1].value());
         }
