@@ -50,7 +50,7 @@ fn main() -> Result<()> {
         Some(path) => path,
         None => String::from("./sample.db"),
     };
-    let database = Database::from(db_path);
+    let mut database = Database::from(db_path);
 
     match cli.command {
         Commands::DbInfo => {
@@ -58,7 +58,6 @@ fn main() -> Result<()> {
             println!("database page count: {}", database.get_page_count());
         }
         Commands::Tables => {
-            panic!("nothing yet");
             let table_names = database.get_table_names();
             for name in table_names {
                 println!("{name}");

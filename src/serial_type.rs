@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 /*
     Type            Size	    Meaning
     0	            0	        Value is a NULL.

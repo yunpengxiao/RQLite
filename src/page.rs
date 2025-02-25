@@ -126,14 +126,15 @@ impl FileHeader {
     }
 }
 
+// The page_num here starts with 0
 impl TableLeafPage {
     pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
         let page_header = PageHeader::from(buffer, page_num).unwrap();
-        let cells = Self::get_cells_from(buffer, page_num);
+        let cells = Self::get_cells_from(buffer, page_num, page_header.cell_count as usize);
         Self {
             page_header,
             page_num,
-            cells: Vec::new(),
+            cells,
         }
     }
 
@@ -141,7 +142,20 @@ impl TableLeafPage {
         self.page_header.cell_count
     }
 
-    fn get_cells_from(buffer: &[u8], page_num: u64) {}
+    fn get_cells_from(buffer: &[u8], page_num: u64, cell_count: usize) -> Vec<Cell> {
+        let mut cells: Vec<Cell> = Vec::new();
+        let cell_pointers = &buffer
+            [PageHeader::MAX_PAGE_HEADER_SIZE..PageHeader::MAX_PAGE_HEADER_SIZE + cell_count * 2];
+        for arr in cell_pointers.chunks_exact(2) {
+            let offset = if page_num == 0 {
+                u16::from_be_bytes(arr.try_into().unwrap()) - FileHeader::FILE_HEADER_SIZE as u16
+            } else {
+                u16::from_be_bytes(arr.try_into().unwrap())
+            };
+            cells.push(Cell::from(&buffer[offset as usize..]).unwrap());
+        }
+        cells
+    }
 }
 
 impl PageHeader {
