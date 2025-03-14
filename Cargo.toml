@@ -1,5 +1,5 @@
 [package]
-name = "codecrafters-sqlite"
+name = "RQlite"
 version = "0.1.0"
 authors = []
 edition = "2024"
@@ -12,3 +12,5 @@ nom = "*"
 clap = { version = "*", features = ["derive"] }
 axum = "*"
 tokio = { version = "*", features = ["full"] }
+assert_cmd = "*"
+predicates = "*"

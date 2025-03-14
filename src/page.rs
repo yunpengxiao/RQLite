@@ -111,6 +111,7 @@ pub struct PageHeader {
     pub cell_count: u16,
     pub cell_content_offset: u32,
     pub fragmented_bytes_count: u8,
+    pub rightmost_pointer: Option<u32>,
 }
 
 impl FileHeader {
@@ -130,7 +131,12 @@ impl FileHeader {
 impl TableLeafPage {
     pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
         let page_header = PageHeader::from(buffer, page_num).unwrap();
-        let cells = Self::get_cells_from(buffer, page_num, page_header.cell_count as usize);
+        let cells = Self::get_cells_from(
+            buffer,
+            page_num,
+            page_header.cell_count as usize,
+            page_header.get_header_size(),
+        );
         Self {
             page_header,
             page_num,
@@ -142,10 +148,14 @@ impl TableLeafPage {
         self.page_header.cell_count
     }
 
-    fn get_cells_from(buffer: &[u8], page_num: u64, cell_count: usize) -> Vec<Cell> {
+    fn get_cells_from(
+        buffer: &[u8],
+        page_num: u64,
+        cell_count: usize,
+        header_size: usize,
+    ) -> Vec<Cell> {
         let mut cells: Vec<Cell> = Vec::new();
-        let cell_pointers = &buffer
-            [PageHeader::MAX_PAGE_HEADER_SIZE..PageHeader::MAX_PAGE_HEADER_SIZE + cell_count * 2];
+        let cell_pointers = &buffer[header_size..header_size + cell_count * 2];
         for arr in cell_pointers.chunks_exact(2) {
             let offset = if page_num == 0 {
                 u16::from_be_bytes(arr.try_into().unwrap()) - FileHeader::FILE_HEADER_SIZE as u16
@@ -159,8 +169,6 @@ impl TableLeafPage {
 }
 
 impl PageHeader {
-    const MAX_PAGE_HEADER_SIZE: usize = 8;
-
     pub fn from(buffer: &[u8], page_num: u64) -> Result<Self> {
         // This offset is the offset since the beginning of page not the buffer.
         let cell_content_offset = if page_num == 0 {
@@ -175,32 +183,15 @@ impl PageHeader {
             cell_count: u16::from_be_bytes([buffer[3], buffer[4]]),
             cell_content_offset,
             fragmented_bytes_count: buffer[9],
+            rightmost_pointer: None,
         })
     }
-}
 
-/*impl RowReader {
-    const BUFFER_SIZE: usize = 4096;
-
-    pub fn from(buffer: &[u8], page_num: u64, cell_count: u16) -> Result<Self> {
-        let cell_pointers = &buffer[PageHeader::MAX_PAGE_HEADER_SIZE
-            ..PageHeader::MAX_PAGE_HEADER_SIZE + (cell_count as usize) * 2];
-        let mut cells: Vec<Cell> = Vec::new();
-        // Page header size can be 12 bytes too, just use 8 here for simplicity
-        //println!("Reading cell pointers from offset {} with bytes {}", page_offset,  (cell_count as usize) * 2);
-        for arr in cell_pointers.chunks_exact(2) {
-            let offset = if page_num == 0 {
-                u16::from_be_bytes(arr.try_into().unwrap()) - FileHeader::FILE_HEADER_SIZE as u16
-            } else {
-                u16::from_be_bytes(arr.try_into().unwrap())
-            };
-            cells.push(Cell::from(&buffer[offset as usize..]).unwrap());
+    pub fn get_header_size(&self) -> usize {
+        if self.rightmost_pointer.is_some() {
+            12
+        } else {
+            8
         }
-
-        Ok(Self { cells })
     }
-
-    pub fn read(&self, row_num: u32) -> Vec<&SerialType> {
-        self.cells[row_num as usize].record.columns.iter().collect()
-    }
-}*/
+}
