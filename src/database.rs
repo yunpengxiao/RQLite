@@ -1,13 +1,10 @@
-use core::panic;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::SeekFrom;
 use std::io::prelude::*;
-use std::path::PathBuf;
 
 use crate::page::TableLeafPage;
 use crate::page::{FileHeader, Page};
-use crate::utils::get_page_type;
 
 #[derive(Debug)]
 pub struct Database {
@@ -58,7 +55,7 @@ impl Database {
     pub fn get_table_names(&mut self) -> Vec<String> {
         let mut result: Vec<String> = Vec::new();
         let data = self.load_raw_page(1, self.get_page_size() as u64);
-        let first_page = TableLeafPage::from(&data, 0, self.get_page_size() as u64);
+        let first_page = TableLeafPage::from(&data, true);
         self.pages
             .entry(1)
             .or_insert(Page::TableLeaf(first_page.clone()));
@@ -71,21 +68,17 @@ impl Database {
     fn load_raw_page(&mut self, page_num: u64, page_size: u64) -> Vec<u8> {
         let page_num = page_num - 1;
         let raw_page_size = if page_num == 0 {
+            self.db_file
+                .seek(SeekFrom::Start(FileHeader::FILE_HEADER_SIZE as u64))
+                .unwrap();
             page_size - FileHeader::FILE_HEADER_SIZE as u64
         } else {
-            page_size
-        };
-        let mut buffer = vec![0; raw_page_size as usize];
-        let offset = if page_num == 0 {
-            FileHeader::FILE_HEADER_SIZE as u64
-        } else {
+            self.db_file
+                .seek(SeekFrom::Start(page_num * page_size))
+                .unwrap();
             page_num * page_size
         };
-        println!(
-            "Reading from offset {} with {} bytes.",
-            offset, raw_page_size
-        );
-        self.db_file.seek(SeekFrom::Start(offset)).unwrap();
+        let mut buffer = vec![0; raw_page_size as usize];
         self.db_file.read_exact(&mut buffer).unwrap(); // buffer is coverted to &[u8] because vec implements AsRef<T>
         buffer
     }

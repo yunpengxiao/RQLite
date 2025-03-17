@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use thiserror::Error;
 
-use crate::cell::Cell;
+use crate::cell::{Cell, TableInteriorCell};
 use crate::utils;
 
 // You need to set RUST_LIB_BACKTRACE=1 to enable backtrace here.
@@ -68,6 +68,7 @@ pub struct FileHeader {
 #[derive(Debug)]
 pub enum Page {
     TableLeaf(TableLeafPage),
+    TableInterior(TableInteriorPage),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -90,8 +91,13 @@ pub enum PageType {
 #[derive(Debug, Clone)]
 pub struct TableLeafPage {
     pub page_header: PageHeader,
-    pub page_num: u64,
     pub cells: Vec<Cell>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableInteriorPage {
+    pub page_header: PageHeader,
+    pub cells: Vec<TableInteriorCell>,
 }
 
 /*
@@ -127,56 +133,9 @@ impl FileHeader {
     }
 }
 
-// The page_num here starts with 0
-impl TableLeafPage {
-    pub fn from(buffer: &[u8], page_num: u64, page_size: u64) -> Self {
-        let page_header = PageHeader::from(buffer, page_num).unwrap();
-        let cells = Self::get_cells_from(
-            buffer,
-            page_num,
-            page_header.cell_count as usize,
-            page_header.get_header_size(),
-        );
-        Self {
-            page_header,
-            page_num,
-            cells,
-        }
-    }
-
-    pub fn table_count(&self) -> u16 {
-        self.page_header.cell_count
-    }
-
-    fn get_cells_from(
-        buffer: &[u8],
-        page_num: u64,
-        cell_count: usize,
-        header_size: usize,
-    ) -> Vec<Cell> {
-        let mut cells: Vec<Cell> = Vec::new();
-        let cell_pointers = &buffer[header_size..header_size + cell_count * 2];
-        for arr in cell_pointers.chunks_exact(2) {
-            let offset = if page_num == 0 {
-                u16::from_be_bytes(arr.try_into().unwrap()) - FileHeader::FILE_HEADER_SIZE as u16
-            } else {
-                u16::from_be_bytes(arr.try_into().unwrap())
-            };
-            cells.push(Cell::from(&buffer[offset as usize..]).unwrap());
-        }
-        cells
-    }
-}
-
 impl PageHeader {
-    pub fn from(buffer: &[u8], page_num: u64) -> Result<Self> {
-        // This offset is the offset since the beginning of page not the buffer.
-        let cell_content_offset = if page_num == 0 {
-            u32::from_be_bytes([buffer[5], buffer[6], buffer[7], buffer[8]])
-                - FileHeader::FILE_HEADER_SIZE as u32
-        } else {
-            u32::from_be_bytes([buffer[5], buffer[6], buffer[7], buffer[8]])
-        };
+    pub fn from(buffer: &[u8]) -> Result<Self> {
+        let cell_content_offset = u32::from_be_bytes([buffer[5], buffer[6], buffer[7], buffer[8]]);
         Ok(Self {
             page_type: utils::get_page_type(buffer[0]),
             first_freeblock: u16::from_be_bytes([buffer[1], buffer[2]]),
@@ -193,5 +152,74 @@ impl PageHeader {
         } else {
             8
         }
+    }
+}
+
+impl TableLeafPage {
+    pub fn from(buffer: &[u8], first_page: bool) -> Self {
+        let page_header = PageHeader::from(buffer).unwrap();
+        let cells = Self::get_cells_from(
+            buffer,
+            page_header.cell_count as usize,
+            page_header.get_header_size(),
+            first_page,
+        );
+        Self { page_header, cells }
+    }
+
+    // Notice that the offset int the cell_pointer is relative to the beginning of the page.
+    // For the first page, the buffer passed in has already skipped the file header. So we
+    // need to substract the file header size from the offset.
+    fn get_cells_from(
+        buffer: &[u8],
+        cell_count: usize,
+        header_size: usize,
+        first_page: bool,
+    ) -> Vec<Cell> {
+        let mut cells: Vec<Cell> = Vec::new();
+        let cell_pointers = &buffer[header_size..header_size + cell_count * 2];
+        for arr in cell_pointers.chunks_exact(2) {
+            let offset = u16::from_be_bytes(arr.try_into().unwrap())
+                - if first_page {
+                    FileHeader::FILE_HEADER_SIZE as u16
+                } else {
+                    0
+                };
+            cells.push(Cell::from(&buffer[offset as usize..]).unwrap());
+        }
+        cells
+    }
+}
+
+impl TableInteriorPage {
+    pub fn from(buffer: &[u8], first_page: bool) -> Self {
+        let page_header = PageHeader::from(buffer).unwrap();
+        let cells = Self::get_table_interior_cells_from(
+            buffer,
+            page_header.cell_count as usize,
+            page_header.get_header_size(),
+            first_page,
+        );
+        Self { page_header, cells }
+    }
+
+    fn get_table_interior_cells_from(
+        buffer: &[u8],
+        cell_count: usize,
+        header_size: usize,
+        fisrt_page: bool,
+    ) -> Vec<TableInteriorCell> {
+        let mut cells: Vec<TableInteriorCell> = Vec::new();
+        let cell_pointers = &buffer[header_size..header_size + cell_count * 2];
+        for arr in cell_pointers.chunks_exact(2) {
+            let offset = u16::from_be_bytes(arr.try_into().unwrap())
+                - if fisrt_page {
+                    FileHeader::FILE_HEADER_SIZE as u16
+                } else {
+                    0
+                };
+            cells.push(TableInteriorCell::from(&buffer[offset as usize..]).unwrap());
+        }
+        cells
     }
 }
