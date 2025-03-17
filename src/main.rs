@@ -2,6 +2,7 @@ mod cell;
 mod database;
 mod executor;
 mod page;
+mod page_scanner;
 mod parser;
 mod record;
 mod serial_type;
